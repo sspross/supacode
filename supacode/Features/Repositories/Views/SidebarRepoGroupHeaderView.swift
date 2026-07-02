@@ -16,16 +16,13 @@ struct SidebarRepoGroupHeaderRow: View {
 
   var body: some View {
     Button {
-      _ = withAnimation(.easeOut(duration: 0.2)) {
-        store.send(.sidebarGroupSetCollapsed(groupID, isCollapsed: !isCollapsed))
-      }
+      store.send(.sidebarGroupSetCollapsed(groupID, isCollapsed: !isCollapsed))
     } label: {
       HStack(spacing: 6) {
         Image(systemName: "chevron.right")
           .font(.caption.weight(.semibold))
           .foregroundStyle(.secondary)
           .rotationEffect(.degrees(isCollapsed ? 0 : 90))
-          .animation(.easeInOut(duration: 0.15), value: isCollapsed)
           .frame(width: 12)
           .accessibilityHidden(true)
         Text(name)
@@ -41,7 +38,13 @@ struct SidebarRepoGroupHeaderRow: View {
     }
     .buttonStyle(.plain)
     .listRowInsets(.leading, 0)
-    .listRowInsets(.vertical, 6)
+    // The `.sidebar` list style puts its big spacing above member repo
+    // *sections*, while this header is a plain row that trails the previous
+    // group's last row closely. A larger top inset makes the group boundary
+    // the dominant gap so the last member above doesn't read as part of this
+    // group.
+    .listRowInsets(.top, 16)
+    .listRowInsets(.bottom, 2)
     .help(isCollapsed ? "Expand \(name)" : "Collapse \(name)")
     .accessibilityLabel("\(name) group, \(isCollapsed ? "collapsed" : "expanded")")
     .contextMenu {

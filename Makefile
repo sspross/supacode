@@ -152,6 +152,14 @@ SPARKLE_BIN := Tuist/.build/artifacts/sparkle/Sparkle/bin
 PERSONAL_SIGN_IDENTITY := Developer ID Application: SiSprocom GmbH (99R82368RE)
 PERSONAL_TEAM_ID := 99R82368RE
 PERSONAL_NOTARY_PROFILE := supacode-notary
+# App Store Connect API key (Team Key, Developer role) for keychain-free
+# notarization. Key ID derives from the AuthKey_<KEYID>.p8 filename; the
+# issuer UUID lives in a sibling file so neither appears in this public
+# Makefile. When either file is missing, notarization falls back to the
+# $(PERSONAL_NOTARY_PROFILE) keychain profile (which requires an unlocked
+# login keychain).
+PERSONAL_ASC_KEY := $(firstword $(wildcard $(HOME)/.config/supacode-personal/AuthKey_*.p8))
+PERSONAL_ASC_ISSUER_FILE := $(HOME)/.config/supacode-personal/asc_issuer_id
 
 dist-personal: $(TUIST_RELEASE_GENERATION_STAMP) # Build Release, Developer ID signed, for the personal Sparkle channel
 	$(SELECT_DEVELOPER_DIR); \
@@ -188,13 +196,19 @@ release-personal: dist-personal # Notarize, staple, and publish the personal bui
 		echo "restore it with: $(SPARKLE_BIN)/generate_keys --account supacode-personal -x $(PERSONAL_SPARKLE_KEY)"; \
 		exit 1; \
 	fi
+	if [ -n "$(PERSONAL_ASC_KEY)" ] && [ -f "$(PERSONAL_ASC_ISSUER_FILE)" ]; then \
+		asc_key_id="$$(basename "$(PERSONAL_ASC_KEY)" .p8)"; asc_key_id="$${asc_key_id#AuthKey_}"; \
+		notary_auth="--key $(PERSONAL_ASC_KEY) --key-id $$asc_key_id --issuer $$(cat "$(PERSONAL_ASC_ISSUER_FILE)")"; \
+	else \
+		notary_auth="--keychain-profile $(PERSONAL_NOTARY_PROFILE)"; \
+	fi; \
 	zip_path="$$(ls dist/supacode-personal-*.zip)"; \
-	submit_json="$$(xcrun notarytool submit "$$zip_path" --keychain-profile "$(PERSONAL_NOTARY_PROFILE)" --wait --output-format json)"; \
+	submit_json="$$(xcrun notarytool submit "$$zip_path" $$notary_auth --wait --output-format json)"; \
 	echo "$$submit_json"; \
 	submission_id="$$(echo "$$submit_json" | jq -r .id)"; \
 	if [ "$$(echo "$$submit_json" | jq -r .status)" != "Accepted" ]; then \
 		echo "notarization failed; log follows:"; \
-		xcrun notarytool log "$$submission_id" --keychain-profile "$(PERSONAL_NOTARY_PROFILE)"; \
+		xcrun notarytool log "$$submission_id" $$notary_auth; \
 		exit 1; \
 	fi; \
 	xcrun stapler staple dist/supacode.app || exit 1; \

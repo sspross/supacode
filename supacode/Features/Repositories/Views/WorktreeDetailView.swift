@@ -56,9 +56,6 @@ struct WorktreeDetailView: View {
       && loadingInfo == nil
       && !showsMultiSelectionSummary
       && selectedWorktree?.isMissing != true
-    let openActionSelection = state.openActionSelection
-    let repoScripts = state.repoScripts
-    let globalScripts = state.globalScripts
     // Source `runningScriptIDs` from the slice instead of `state.runningScriptIDs`
     // so an unrelated `sidebarItems[id:].agents` mutation on the focused row
     // doesn't re-publish this. Same field, observed through the projected slice.
@@ -78,22 +75,11 @@ struct WorktreeDetailView: View {
       if showsToolbarPlaceholder {
         ToolbarPlaceholderContent()
       } else if hasActiveWorktree, let selectedWorktree {
-        let titleContent = Self.makeToolbarTitleContent(
+        let toolbarState = makeToolbarState(
           selectedWorktree: selectedWorktree,
           selectedRow: selectedRow,
-          repositories: repositories,
-          hideSubtitleOnMatch: hideSubtitleOnMatch
-        )
-        let toolbarState = WorktreeToolbarState(
-          titleContent: titleContent,
-          rootURL: selectedWorktree.repositoryRootURL,
-          kind: toolbarKind(for: selectedWorktree, selectedRow: selectedRow),
-          isRemote: selectedWorktree.host != nil,
-          statusToast: repositories.statusToast,
-          openActionSelection: openActionSelection,
-          repoScripts: repoScripts,
-          globalScripts: globalScripts,
-          runningScriptIDs: runningScriptIDs,
+          state: state,
+          runningScriptIDs: runningScriptIDs
         )
         WorktreeToolbarContent(
           toolbarState: toolbarState,
@@ -128,18 +114,36 @@ struct WorktreeDetailView: View {
     // toolbar tint above; toolbar content is re-hosted in fullscreen and can't see it.
     .windowFullScreenObserver(isFullScreen: $isToolbarFullScreen)
     let hasRunningRunScript = state.hasRunningRunScript
-    // Open / Reveal in Finder reach local paths only; the terminal and search
-    // commands stay enabled for a remote worktree (they work over SSH).
-    let canOpenLocally = hasActiveWorktree && selectedWorktree?.host == nil
-    let resolvedSelection: OpenWorktreeAction? =
-      canOpenLocally ? OpenWorktreeAction.availableSelection(store.openActionSelection) : nil
+    // Reveal in Finder is local-only; Open can target a remote worktree when the
+    // resolved editor can express the host. `resolvedSelection` (nil when it
+    // can't) drives both the focused-action enablement and the menu label.
+    let resolvedSelection = Self.resolvedOpenSelection(
+      hasActiveWorktree: hasActiveWorktree,
+      selectedWorktree: selectedWorktree,
+      openActionSelection: store.openActionSelection
+    )
     return applyFocusedActions(
       content: content,
       hasActiveWorktree: hasActiveWorktree,
-      canOpenLocally: canOpenLocally,
+      canRevealLocally: hasActiveWorktree && selectedWorktree?.host == nil,
       hasRunningRunScript: hasRunningRunScript,
       resolvedSelection: resolvedSelection
     )
+  }
+
+  /// The editor the primary Open command would launch, or `nil` when it can't
+  /// open the (possibly remote) selection, which disables the Open command and
+  /// clears the menu-bar label.
+  private static func resolvedOpenSelection(
+    hasActiveWorktree: Bool,
+    selectedWorktree: Worktree?,
+    openActionSelection: OpenWorktreeAction
+  ) -> OpenWorktreeAction? {
+    guard hasActiveWorktree, let selectedWorktree else { return nil }
+    let resolved = OpenWorktreeAction.availableSelection(openActionSelection)
+    guard let host = selectedWorktree.host else { return resolved }
+    let remotePath = selectedWorktree.location.workingDirectoryPath
+    return resolved.remoteOpenInvocation(host: host, remotePath: remotePath) != nil ? resolved : nil
   }
 
   private func selectedWorktreeSummaries(
@@ -272,15 +276,17 @@ struct WorktreeDetailView: View {
   private func applyFocusedActions<Content: View>(
     content: Content,
     hasActiveWorktree: Bool,
-    canOpenLocally: Bool,
+    canRevealLocally: Bool,
     hasRunningRunScript: Bool,
     resolvedSelection: OpenWorktreeAction?
   ) -> some View {
     content
-      .focusedSceneAction(\.openSelectedWorktreeAction, enabled: canOpenLocally) {
+      // Open is enabled only when the resolved editor can open the selection
+      // (`resolvedSelection != nil`), which already folds in remote capability.
+      .focusedSceneAction(\.openSelectedWorktreeAction, enabled: resolvedSelection != nil) {
         store.send(.openSelectedWorktree)
       }
-      .focusedSceneAction(\.revealInFinderAction, enabled: canOpenLocally) {
+      .focusedSceneAction(\.revealInFinderAction, enabled: canRevealLocally) {
         store.send(.revealInFinder)
       }
       .focusedSceneValue(\.openActionSelection, resolvedSelection)
@@ -365,6 +371,17 @@ struct WorktreeDetailView: View {
     let globalFingerprints: [ScriptFingerprint]
   }
 
+  // NSMenu cache key for the Open menu, mirroring `ScriptMenuIdentity`. AppKit
+  // caches a toolbar Menu's item state, so without a fresh identity the per-item
+  // `.disabled` gates go stale on a worktree switch. Keyed on `host` (drives
+  // `canOpen` + the Finder gate) and `selection` (the primary item's state).
+  // `remoteOpenPath` is intentionally excluded: capability is path-independent,
+  // so keying on it would only force needless rebuilds.
+  fileprivate struct OpenMenuIdentity: Hashable {
+    let host: RemoteHost?
+    let selection: OpenWorktreeAction
+  }
+
   fileprivate struct ScriptFingerprint: Hashable {
     let id: UUID
     let displayName: String
@@ -392,9 +409,10 @@ struct WorktreeDetailView: View {
     let titleContent: WorktreeToolbarTitleContent
     let rootURL: URL
     let kind: Kind
-    // Open actions reach local paths only, so the toolbar Open menu is hidden
-    // for a remote worktree.
-    let isRemote: Bool
+    // The remote open host + path; `nil` host means local. Each toolbar Open
+    // menu editor is enabled only when it can express the host (`canOpen`).
+    let remoteOpenHost: RemoteHost?
+    let remoteOpenPath: String
     let statusToast: RepositoriesFeature.StatusToast?
     let openActionSelection: OpenWorktreeAction
     let repoScripts: [ScriptDefinition]
@@ -403,6 +421,20 @@ struct WorktreeDetailView: View {
 
     var isFolder: Bool {
       if case .folder = kind { true } else { false }
+    }
+
+    /// Whether `action` can open this worktree: local everywhere, remote only
+    /// via an editor whose Remote-SSH CLI can express the host.
+    func canOpen(_ action: OpenWorktreeAction) -> Bool {
+      guard let remoteOpenHost else { return true }
+      return action.remoteOpenInvocation(host: remoteOpenHost, remotePath: remoteOpenPath) != nil
+    }
+
+    /// A dedicated "Open With" tooltip reason `action` is disabled for this
+    /// host, or `nil` if none applies. Delegates to the shared capability model.
+    func remoteOpenDisabledReason(_ action: OpenWorktreeAction) -> String? {
+      guard let remoteOpenHost else { return nil }
+      return action.remoteOpenDisabledReason(host: remoteOpenHost, remotePath: remoteOpenPath)
     }
 
     var pullRequest: GithubPullRequest? {
@@ -429,6 +461,11 @@ struct WorktreeDetailView: View {
         repoFingerprints: repoScripts.map(ScriptFingerprint.init),
         globalFingerprints: globalScripts.map(ScriptFingerprint.init),
       )
+    }
+
+    // NSMenu cache key for the Open menu. See `OpenMenuIdentity`.
+    var openMenuIdentity: OpenMenuIdentity {
+      OpenMenuIdentity(host: remoteOpenHost, selection: openActionSelection)
     }
 
     /// The first `.run`-kind script, if any.
@@ -498,7 +535,10 @@ struct WorktreeDetailView: View {
 
       ToolbarItem {
         openMenu(openActionSelection: toolbarState.openActionSelection)
-          .disabled(toolbarState.isRemote)
+          // Rebuild the NSMenu when the host/selection changes so per-item
+          // `.disabled` gates don't go stale across a worktree switch.
+          .id(toolbarState.openMenuIdentity)
+          .transaction { $0.animation = nil }
       }
       ToolbarSpacer(.fixed)
 
@@ -522,8 +562,14 @@ struct WorktreeDetailView: View {
     private func openMenu(openActionSelection: OpenWorktreeAction) -> some View {
       let availableActions = OpenWorktreeAction.availableCases.filter { $0 != .finder }
       let resolved = OpenWorktreeAction.availableSelection(openActionSelection)
-      let primarySelection = resolved == .finder ? availableActions.first : resolved
+      // The primary (single-click) action is the resolved selected editor
+      // (Finder falls back to the first available editor). It is NOT substituted
+      // when it can't open the worktree, which would diverge from ⌘O / the menu
+      // bar; instead it's disabled and the user picks a capable editor from the
+      // submenu.
+      let primarySelection: OpenWorktreeAction? = resolved == .finder ? availableActions.first : resolved
       if let primarySelection {
+        let canOpenPrimary = toolbarState.canOpen(primarySelection)
         Menu {
           // The popup renders as system chrome; escape the toolbar tint below so its
           // rows keep the system appearance instead of the terminal background.
@@ -538,6 +584,7 @@ struct WorktreeDetailView: View {
               }
               .buttonStyle(.plain)
               .help(openActionHelpText(for: action, isDefault: isDefault))
+              .disabled(!toolbarState.canOpen(action))
             }
             Divider()
             Button {
@@ -546,11 +593,15 @@ struct WorktreeDetailView: View {
               OpenWorktreeActionMenuLabelView(action: .finder)
             }
             .help("Reveal in Finder (\(WorktreeDetailView.resolveShortcutDisplay(for: AppShortcuts.revealInFinder)))")
+            .disabled(toolbarState.remoteOpenHost != nil)
           }
           .inheritSystemColorScheme()
         } label: {
           OpenWorktreeActionMenuLabelView(action: primarySelection)
         } primaryAction: {
+          // Single-click never opens an editor that can't reach the worktree;
+          // the submenu stays available for picking a capable one.
+          guard canOpenPrimary else { return }
           onOpenWorktree(primarySelection)
         }
         .help(openActionHelpText(for: primarySelection, isDefault: true))
@@ -561,6 +612,7 @@ struct WorktreeDetailView: View {
     }
 
     private func openActionHelpText(for action: OpenWorktreeAction, isDefault: Bool) -> String {
+      if let reason = toolbarState.remoteOpenDisabledReason(action) { return reason }
       guard isDefault else { return action.title }
       return "\(action.title) (\(WorktreeDetailView.resolveShortcutDisplay(for: AppShortcuts.openWorktree)))"
     }
@@ -625,6 +677,32 @@ struct WorktreeDetailView: View {
         rootURL: selectedWorktree.repositoryRootURL,
         hostInfo: repository?.host?.displayAuthority
       )
+    )
+  }
+
+  private func makeToolbarState(
+    selectedWorktree: Worktree,
+    selectedRow: SelectedWorktreeSlice?,
+    state: AppFeature.State,
+    runningScriptIDs: Set<UUID>
+  ) -> WorktreeToolbarState {
+    let repositories = state.repositories
+    return WorktreeToolbarState(
+      titleContent: Self.makeToolbarTitleContent(
+        selectedWorktree: selectedWorktree,
+        selectedRow: selectedRow,
+        repositories: repositories,
+        hideSubtitleOnMatch: hideSubtitleOnMatch
+      ),
+      rootURL: selectedWorktree.repositoryRootURL,
+      kind: toolbarKind(for: selectedWorktree, selectedRow: selectedRow),
+      remoteOpenHost: selectedWorktree.host,
+      remoteOpenPath: selectedWorktree.location.workingDirectoryPath,
+      statusToast: repositories.statusToast,
+      openActionSelection: state.openActionSelection,
+      repoScripts: state.repoScripts,
+      globalScripts: state.globalScripts,
+      runningScriptIDs: runningScriptIDs
     )
   }
 
@@ -1130,7 +1208,8 @@ private struct WorktreeToolbarPreview: View {
       ),
       rootURL: URL(fileURLWithPath: "/tmp/preview"),
       kind: .git(pullRequest: nil),
-      isRemote: false,
+      remoteOpenHost: nil,
+      remoteOpenPath: "/tmp/preview",
       statusToast: nil,
       openActionSelection: .finder,
       repoScripts: [ScriptDefinition(kind: .run, command: "npm run dev")],

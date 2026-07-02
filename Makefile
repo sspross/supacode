@@ -152,7 +152,7 @@ SPARKLE_BIN := Tuist/.build/artifacts/sparkle/Sparkle/bin
 dist-personal: $(TUIST_RELEASE_GENERATION_STAMP) # Build Release for the personal Sparkle channel and zip it
 	$(SELECT_DEVELOPER_DIR); \
 	build_num="$$(git rev-list --count HEAD)"; export build_num; \
-	bash -o pipefail -c 'xcodebuild -workspace "$(PROJECT_WORKSPACE)" -scheme "$(APP_SCHEME)" -configuration Release build CURRENT_PROJECT_VERSION="$$build_num" -skipMacroValidation $(XCODEBUILD_FLAGS) 2>&1 | { mise exec -- xcbeautify --disable-logging || cat; }'; \
+	bash -o pipefail -c 'xcodebuild -workspace "$(PROJECT_WORKSPACE)" -scheme "$(APP_SCHEME)" -configuration Release build CURRENT_PROJECT_VERSION="$$build_num" ENABLE_HARDENED_RUNTIME=NO -skipMacroValidation $(XCODEBUILD_FLAGS) 2>&1 | { mise exec -- xcbeautify --disable-logging || cat; }'; \
 	settings="$$(xcodebuild -workspace "$(PROJECT_WORKSPACE)" -scheme "$(APP_SCHEME)" -configuration Release -showBuildSettings -json 2>/dev/null)"; \
 	build_dir="$$(echo "$$settings" | jq -r '.[0].buildSettings.BUILT_PRODUCTS_DIR')"; \
 	product="$$(echo "$$settings" | jq -r '.[0].buildSettings.FULL_PRODUCT_NAME')"; \

@@ -148,11 +148,15 @@ PERSONAL_REPO := sspross/supacode
 PERSONAL_DOWNLOAD_URL := https://github.com/$(PERSONAL_REPO)/releases/download/$(PERSONAL_RELEASE_TAG)/
 PERSONAL_SPARKLE_KEY := $(HOME)/.config/supacode-personal/sparkle_eddsa_private.key
 SPARKLE_BIN := Tuist/.build/artifacts/sparkle/Sparkle/bin
+# Cert name, not SHA, so certificate renewal doesn't break the build.
+PERSONAL_SIGN_IDENTITY := Developer ID Application: SiSprocom GmbH (99R82368RE)
+PERSONAL_TEAM_ID := 99R82368RE
+PERSONAL_NOTARY_PROFILE := supacode-notary
 
-dist-personal: $(TUIST_RELEASE_GENERATION_STAMP) # Build Release for the personal Sparkle channel and zip it
+dist-personal: $(TUIST_RELEASE_GENERATION_STAMP) # Build Release, Developer ID signed, for the personal Sparkle channel
 	$(SELECT_DEVELOPER_DIR); \
 	build_num="$$(git rev-list --count HEAD)"; export build_num; \
-	bash -o pipefail -c 'xcodebuild -workspace "$(PROJECT_WORKSPACE)" -scheme "$(APP_SCHEME)" -configuration Release build CURRENT_PROJECT_VERSION="$$build_num" ENABLE_HARDENED_RUNTIME=NO -skipMacroValidation $(XCODEBUILD_FLAGS) 2>&1 | { mise exec -- xcbeautify --disable-logging || cat; }'; \
+	bash -o pipefail -c 'xcodebuild -workspace "$(PROJECT_WORKSPACE)" -scheme "$(APP_SCHEME)" -configuration Release build CURRENT_PROJECT_VERSION="$$build_num" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="$(PERSONAL_TEAM_ID)" CODE_SIGN_IDENTITY="$(PERSONAL_SIGN_IDENTITY)" OTHER_CODE_SIGN_FLAGS="--timestamp" -skipMacroValidation $(XCODEBUILD_FLAGS) 2>&1 | { mise exec -- xcbeautify --disable-logging || cat; }'; \
 	settings="$$(xcodebuild -workspace "$(PROJECT_WORKSPACE)" -scheme "$(APP_SCHEME)" -configuration Release -showBuildSettings -json 2>/dev/null)"; \
 	build_dir="$$(echo "$$settings" | jq -r '.[0].buildSettings.BUILT_PRODUCTS_DIR')"; \
 	product="$$(echo "$$settings" | jq -r '.[0].buildSettings.FULL_PRODUCT_NAME')"; \
@@ -160,16 +164,35 @@ dist-personal: $(TUIST_RELEASE_GENERATION_STAMP) # Build Release for the persona
 	version="$$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$$src/Contents/Info.plist")"; \
 	rm -rf dist; \
 	mkdir -p dist; \
+	staged="dist/$$product"; \
+	ditto "$$src" "$$staged"; \
+	for helper in \
+		"$$staged/Contents/Resources/bin/supacode" \
+		"$$staged/Contents/Resources/zmx/zmx" \
+		"$$staged/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc" \
+		"$$staged/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc" \
+		"$$staged/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate" \
+		"$$staged/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app" \
+		"$$staged/Contents/Frameworks/Sparkle.framework"; do \
+		codesign --force --timestamp --options runtime --preserve-metadata=entitlements --sign "$(PERSONAL_SIGN_IDENTITY)" "$$helper"; \
+	done; \
+	codesign --force --timestamp --options runtime --preserve-metadata=entitlements --sign "$(PERSONAL_SIGN_IDENTITY)" "$$staged"; \
+	codesign --verify --deep --strict "$$staged"; \
 	zip_path="dist/supacode-personal-$$version-$$build_num.zip"; \
-	ditto -c -k --keepParent "$$src" "$$zip_path"; \
+	ditto -c -k --keepParent "$$staged" "$$zip_path"; \
 	echo "created $$zip_path"
 
-release-personal: dist-personal # Publish the personal build + Sparkle appcast to the rolling GitHub release
+release-personal: dist-personal # Notarize, staple, and publish the personal build + Sparkle appcast
 	@if [ ! -f "$(PERSONAL_SPARKLE_KEY)" ]; then \
 		echo "missing Sparkle private key: $(PERSONAL_SPARKLE_KEY)"; \
 		echo "restore it with: $(SPARKLE_BIN)/generate_keys --account supacode-personal -x $(PERSONAL_SPARKLE_KEY)"; \
 		exit 1; \
 	fi
+	zip_path="$$(ls dist/supacode-personal-*.zip)"; \
+	xcrun notarytool submit "$$zip_path" --keychain-profile "$(PERSONAL_NOTARY_PROFILE)" --wait; \
+	xcrun stapler staple dist/supacode.app; \
+	rm "$$zip_path"; \
+	ditto -c -k --keepParent dist/supacode.app "$$zip_path"
 	$(SPARKLE_BIN)/generate_appcast --ed-key-file "$(PERSONAL_SPARKLE_KEY)" --download-url-prefix "$(PERSONAL_DOWNLOAD_URL)" -o dist/appcast.xml dist
 	gh release view -R "$(PERSONAL_REPO)" "$(PERSONAL_RELEASE_TAG)" >/dev/null 2>&1 || { \
 		git tag -f "$(PERSONAL_RELEASE_TAG)"; \

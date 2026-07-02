@@ -54,7 +54,8 @@ struct SidebarRepoGroupHeaderRow: View {
     // header → first-member to the same ~21pt rhythm as repo → repo.
     .padding(.top, SidebarNestLayout.groupHeaderTopPadding)
     .padding(.bottom, SidebarNestLayout.groupHeaderBottomPadding)
-    .help(isCollapsed ? "Expand \(name)" : "Collapse \(name)")
+    // Deliberately no `.help`: the chevron already signals collapse/expand and
+    // the user found the hover label noisy (VoiceOver keeps the label below).
     .accessibilityLabel("\(name) group, \(isCollapsed ? "collapsed" : "expanded")")
     .contextMenu {
       Button("Rename Group…", systemImage: "pencil") {

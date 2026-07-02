@@ -85,6 +85,9 @@ struct WorktreeDetailView: View {
           toolbarState: toolbarState,
           terminalManager: terminalManager,
           isFullScreen: isToolbarFullScreen,
+          showsClock: settingsFile.global.showToolbarClock,
+          showsOpenMenu: settingsFile.global.showToolbarOpenMenu,
+          showsScriptMenu: settingsFile.global.showToolbarScriptMenu,
           repositoriesStore: store.scope(state: \.repositories, action: \.repositories),
           onOpenWorktree: { action in
             store.send(.openWorktree(action))
@@ -495,6 +498,9 @@ struct WorktreeDetailView: View {
     let toolbarState: WorktreeToolbarState
     let terminalManager: WorktreeTerminalManager
     let isFullScreen: Bool
+    let showsClock: Bool
+    let showsOpenMenu: Bool
+    let showsScriptMenu: Bool
     let repositoriesStore: StoreOf<RepositoriesFeature>?
     let onOpenWorktree: (OpenWorktreeAction) -> Void
     let onOpenActionSelectionChanged: (OpenWorktreeAction) -> Void
@@ -521,7 +527,8 @@ struct WorktreeDetailView: View {
       ToolbarItemGroup {
         ToolbarStatusView(
           toast: toolbarState.statusToast,
-          pullRequest: toolbarState.pullRequest
+          pullRequest: toolbarState.pullRequest,
+          showsClock: showsClock
         )
         .padding(.horizontal)
         ToolbarNotificationsPopoverButtonHost(
@@ -533,28 +540,33 @@ struct WorktreeDetailView: View {
 
       ToolbarSpacer(.flexible)
 
-      ToolbarItem {
-        openMenu(openActionSelection: toolbarState.openActionSelection)
-          // Rebuild the NSMenu when the host/selection changes so per-item
-          // `.disabled` gates don't go stale across a worktree switch.
-          .id(toolbarState.openMenuIdentity)
-          .transaction { $0.animation = nil }
+      if showsOpenMenu {
+        ToolbarItem {
+          openMenu(openActionSelection: toolbarState.openActionSelection)
+            // Rebuild the NSMenu when the host/selection changes so per-item
+            // `.disabled` gates don't go stale across a worktree switch.
+            .id(toolbarState.openMenuIdentity)
+            .transaction { $0.animation = nil }
+        }
       }
-      ToolbarSpacer(.fixed)
 
-      ToolbarItem {
-        ScriptMenu(
-          toolbarState: toolbarState,
-          onRunScript: onRunScript,
-          onRunNamedScript: onRunNamedScript,
-          onStopScript: onStopScript,
-          onStopRunScripts: onStopRunScripts,
-          onManageRepoScripts: onManageRepoScripts,
-          onManageGlobalScripts: onManageGlobalScripts
-        )
-        // Rebuild the NSMenu when any field changes (#280) so renames propagate without a worktree switch.
-        .id(toolbarState.scriptMenuIdentity)
-        .transaction { $0.animation = nil }
+      if showsScriptMenu {
+        ToolbarSpacer(.fixed)
+
+        ToolbarItem {
+          ScriptMenu(
+            toolbarState: toolbarState,
+            onRunScript: onRunScript,
+            onRunNamedScript: onRunNamedScript,
+            onStopScript: onStopScript,
+            onStopRunScripts: onStopRunScripts,
+            onManageRepoScripts: onManageRepoScripts,
+            onManageGlobalScripts: onManageGlobalScripts
+          )
+          // Rebuild the NSMenu when any field changes (#280) so renames propagate without a worktree switch.
+          .id(toolbarState.scriptMenuIdentity)
+          .transaction { $0.animation = nil }
+        }
       }
     }
 
@@ -1228,6 +1240,9 @@ private struct WorktreeToolbarPreview: View {
         toolbarState: toolbarState,
         terminalManager: WorktreeTerminalManager(runtime: GhosttyRuntime()),
         isFullScreen: false,
+        showsClock: true,
+        showsOpenMenu: true,
+        showsScriptMenu: true,
         repositoriesStore: nil,
         onOpenWorktree: { _ in },
         onOpenActionSelectionChanged: { _ in },

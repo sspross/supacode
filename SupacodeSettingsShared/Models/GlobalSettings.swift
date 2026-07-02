@@ -50,6 +50,11 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
   public var pullRequestMergeStrategy: PullRequestMergeStrategy
   public var terminalThemeSyncEnabled: Bool
   public var hideSingleTabBar: Bool
+  /// Toolbar clock pill with the Command Palette hint. Hiding it keeps
+  /// toasts and pull-request status visible.
+  public var showToolbarClock: Bool
+  public var showToolbarOpenMenu: Bool
+  public var showToolbarScriptMenu: Bool
   public var automatedActionPolicy: AutomatedActionPolicy
   public var autoDeleteArchivedWorktreesAfterDays: AutoDeletePeriod?
   public var shortcutOverrides: [AppShortcutID: AppShortcutOverride]
@@ -91,6 +96,9 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     pullRequestMergeStrategy: .merge,
     terminalThemeSyncEnabled: true,
     hideSingleTabBar: false,
+    showToolbarClock: true,
+    showToolbarOpenMenu: true,
+    showToolbarScriptMenu: true,
     automatedActionPolicy: .cliOnly,
     defaultWorktreeBaseDirectoryPath: nil,
     autoDeleteArchivedWorktreesAfterDays: nil,
@@ -126,6 +134,9 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     pullRequestMergeStrategy: PullRequestMergeStrategy = .merge,
     terminalThemeSyncEnabled: Bool = true,
     hideSingleTabBar: Bool = false,
+    showToolbarClock: Bool = true,
+    showToolbarOpenMenu: Bool = true,
+    showToolbarScriptMenu: Bool = true,
     automatedActionPolicy: AutomatedActionPolicy = .cliOnly,
     defaultWorktreeBaseDirectoryPath: String? = nil,
     autoDeleteArchivedWorktreesAfterDays: AutoDeletePeriod? = nil,
@@ -159,6 +170,9 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     self.pullRequestMergeStrategy = pullRequestMergeStrategy
     self.terminalThemeSyncEnabled = terminalThemeSyncEnabled
     self.hideSingleTabBar = hideSingleTabBar
+    self.showToolbarClock = showToolbarClock
+    self.showToolbarOpenMenu = showToolbarOpenMenu
+    self.showToolbarScriptMenu = showToolbarScriptMenu
     self.automatedActionPolicy = automatedActionPolicy
     self.defaultWorktreeBaseDirectoryPath = defaultWorktreeBaseDirectoryPath
     self.autoDeleteArchivedWorktreesAfterDays = autoDeleteArchivedWorktreesAfterDays
@@ -267,6 +281,15 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
     hideSingleTabBar =
       try container.decodeIfPresent(Bool.self, forKey: .hideSingleTabBar)
       ?? Self.default.hideSingleTabBar
+    showToolbarClock =
+      try container.decodeIfPresent(Bool.self, forKey: .showToolbarClock)
+      ?? Self.default.showToolbarClock
+    showToolbarOpenMenu =
+      try container.decodeIfPresent(Bool.self, forKey: .showToolbarOpenMenu)
+      ?? Self.default.showToolbarOpenMenu
+    showToolbarScriptMenu =
+      try container.decodeIfPresent(Bool.self, forKey: .showToolbarScriptMenu)
+      ?? Self.default.showToolbarScriptMenu
     // Migrate from the old Bool `allowArbitraryDeeplinkInput` to the new enum.
     if let policy = try container.decodeIfPresent(AutomatedActionPolicy.self, forKey: .automatedActionPolicy) {
       automatedActionPolicy = policy

@@ -29,6 +29,9 @@ struct SettingsFeatureTests {
       mergedWorktreeAction: .archive,
       promptForWorktreeCreation: true,
       terminalThemeSyncEnabled: false,
+      showToolbarClock: false,
+      showToolbarOpenMenu: false,
+      showToolbarScriptMenu: false,
       automatedActionPolicy: .always,
     )
     @Shared(.settingsFile) var settingsFile
@@ -59,6 +62,9 @@ struct SettingsFeatureTests {
       $0.promptForWorktreeCreation = true
       $0.fetchOriginBeforeWorktreeCreation = true
       $0.terminalThemeSyncEnabled = false
+      $0.showToolbarClock = false
+      $0.showToolbarOpenMenu = false
+      $0.showToolbarScriptMenu = false
       $0.automatedActionPolicy = .always
     }
     await store.skipReceivedActions()

@@ -65,6 +65,20 @@ public struct AppearanceSettingsView: View {
           Text("Applies to Worktrees without repository overrides.")
         }
       }
+      Section("Toolbar") {
+        Toggle(isOn: $store.showToolbarClock) {
+          Text("Show Clock")
+          Text("The clock and Command Palette hint. Toasts and pull request status stay visible.")
+        }
+        Toggle(isOn: $store.showToolbarOpenMenu) {
+          Text("Show Open Menu")
+          Text("The button that opens the Worktree in your editor.")
+        }
+        Toggle(isOn: $store.showToolbarScriptMenu) {
+          Text("Show Script Menu")
+          Text("The Run button and script list.")
+        }
+      }
       Section {
         Toggle(isOn: $store.analyticsEnabled) {
           Text("Share Analytics")

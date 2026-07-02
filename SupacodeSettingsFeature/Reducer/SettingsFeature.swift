@@ -63,6 +63,9 @@ public struct SettingsFeature {
     public var pullRequestMergeStrategy: PullRequestMergeStrategy
     public var terminalThemeSyncEnabled: Bool
     public var hideSingleTabBar: Bool
+    public var showToolbarClock: Bool
+    public var showToolbarOpenMenu: Bool
+    public var showToolbarScriptMenu: Bool
     public var automatedActionPolicy: AutomatedActionPolicy
     public var defaultWorktreeBaseDirectoryPath: String
     public var autoDeleteArchivedWorktreesAfterDays: AutoDeletePeriod?
@@ -112,6 +115,9 @@ public struct SettingsFeature {
       pullRequestMergeStrategy = settings.pullRequestMergeStrategy
       terminalThemeSyncEnabled = settings.terminalThemeSyncEnabled
       hideSingleTabBar = settings.hideSingleTabBar
+      showToolbarClock = settings.showToolbarClock
+      showToolbarOpenMenu = settings.showToolbarOpenMenu
+      showToolbarScriptMenu = settings.showToolbarScriptMenu
       automatedActionPolicy = settings.automatedActionPolicy
       autoDeleteArchivedWorktreesAfterDays = settings.autoDeleteArchivedWorktreesAfterDays
       shortcutOverrides = settings.shortcutOverrides
@@ -149,6 +155,9 @@ public struct SettingsFeature {
         pullRequestMergeStrategy: pullRequestMergeStrategy,
         terminalThemeSyncEnabled: terminalThemeSyncEnabled,
         hideSingleTabBar: hideSingleTabBar,
+        showToolbarClock: showToolbarClock,
+        showToolbarOpenMenu: showToolbarOpenMenu,
+        showToolbarScriptMenu: showToolbarScriptMenu,
         automatedActionPolicy: automatedActionPolicy,
         defaultWorktreeBaseDirectoryPath: SupacodePaths.normalizedWorktreeBaseDirectoryPath(
           defaultWorktreeBaseDirectoryPath
@@ -289,6 +298,9 @@ public struct SettingsFeature {
         state.pullRequestMergeStrategy = normalizedSettings.pullRequestMergeStrategy
         state.terminalThemeSyncEnabled = normalizedSettings.terminalThemeSyncEnabled
         state.hideSingleTabBar = normalizedSettings.hideSingleTabBar
+        state.showToolbarClock = normalizedSettings.showToolbarClock
+        state.showToolbarOpenMenu = normalizedSettings.showToolbarOpenMenu
+        state.showToolbarScriptMenu = normalizedSettings.showToolbarScriptMenu
         state.automatedActionPolicy = normalizedSettings.automatedActionPolicy
         state.autoDeleteArchivedWorktreesAfterDays = normalizedSettings.autoDeleteArchivedWorktreesAfterDays
         state.shortcutOverrides = normalizedSettings.shortcutOverrides

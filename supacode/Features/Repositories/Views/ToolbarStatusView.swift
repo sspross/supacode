@@ -3,6 +3,8 @@ import SwiftUI
 struct ToolbarStatusView: View {
   let toast: RepositoriesFeature.StatusToast?
   let pullRequest: GithubPullRequest?
+  /// Hides only the idle clock pill; toasts and pull request status always show.
+  let showsClock: Bool
 
   var body: some View {
     Group {
@@ -30,7 +32,7 @@ struct ToolbarStatusView: View {
         if let model = PullRequestStatusModel(pullRequest: pullRequest) {
           PullRequestStatusButton(model: model)
             .transition(.opacity)
-        } else {
+        } else if showsClock {
           MotivationalStatusView()
             .transition(.opacity)
         }

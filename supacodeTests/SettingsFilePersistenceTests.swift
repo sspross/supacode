@@ -185,6 +185,10 @@ struct SettingsFilePersistenceTests {
     #expect(settings.pinnedWorktreeIDs.isEmpty)
     // Pre-existing files must not flip the toggle on upgrade.
     #expect(settings.global.terminalThemeSyncEnabled == false)
+    // Missing keys (pre-feature file) keep all toolbar items visible.
+    #expect(settings.global.showToolbarClock == true)
+    #expect(settings.global.showToolbarOpenMenu == true)
+    #expect(settings.global.showToolbarScriptMenu == true)
   }
 
   @Test func freshInstallDefaultsTerminalThemeSyncEnabledToTrue() {
@@ -384,6 +388,33 @@ struct SettingsFilePersistenceTests {
 
     // Explicit `true` must survive the asymmetric missing-key fallback.
     #expect(reloaded.global.terminalThemeSyncEnabled == true)
+  }
+
+  @Test(.dependencies) func roundTripsToolbarVisibilityToggles() throws {
+    let storage = SettingsTestStorage()
+
+    withDependencies {
+      $0.settingsFileStorage = storage.storage
+    } operation: {
+      @Shared(.settingsFile) var settings: SettingsFile
+      $settings.withLock {
+        $0.global.showToolbarClock = false
+        $0.global.showToolbarOpenMenu = false
+        $0.global.showToolbarScriptMenu = false
+      }
+    }
+
+    let reloaded: SettingsFile = withDependencies {
+      $0.settingsFileStorage = storage.storage
+    } operation: {
+      @Shared(.settingsFile) var reloaded: SettingsFile
+      return reloaded
+    }
+
+    // Explicit `false` must survive the missing-key → default-true fallback.
+    #expect(reloaded.global.showToolbarClock == false)
+    #expect(reloaded.global.showToolbarOpenMenu == false)
+    #expect(reloaded.global.showToolbarScriptMenu == false)
   }
 }
 

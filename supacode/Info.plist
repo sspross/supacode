@@ -64,13 +64,13 @@
 	<key>SentryDSN</key>
 	<string>$(SENTRY_DSN)</string>
 	<key>SUFeedURL</key>
-    <string>https://supacode.sh/download/latest/appcast.xml</string>
+    <string>https://github.com/sspross/supacode/releases/download/personal/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>eBdTbl+6sR8gxO1zyzyvdQHuJrXMLxD31oCc+JoW5jo=</string>
+	<string>C6MN3EqaTSGAUM2CbABsv+Zfg3G9uSre1xT2++jaFho=</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUAutomaticallyUpdate</key>
-	<true/>
+	<false/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

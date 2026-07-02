@@ -13,7 +13,8 @@ make test                        # Run all tests
 make log-stream                  # Stream app logs (subsystem: app.supabit.supacode)
 make bump-version                # Bump patch version and create git tag
 make bump-and-release            # Bump version and push to trigger release
-make dist-personal               # Release build with Sparkle disabled, zipped for personal distribution
+make dist-personal               # Release build for the personal Sparkle channel, zipped
+make release-personal            # Publish personal build + appcast to the rolling GitHub release
 ```
 
 Run a single test class or method:
@@ -202,6 +203,13 @@ Reducer ← .repositories(.worktreeInfoEvent(Event)) ← AsyncStream<Event>
 
 - `ThirdParty/ghostty` (`https://github.com/ghostty-org/ghostty`): Source dependency used to build `Frameworks/GhosttyKit.xcframework` and terminal resources. The pin tracks upstream; local changes live as out-of-tree patches in `patches/*.patch`, applied to the working tree by `scripts/build-ghostty.sh` before `zig build` and reverted on exit (the pin is never moved, no fork). On a ghostty bump a patch may stop applying and the build fails loudly: refresh the patch, and prefer upstreaming it to retire the carry cost. Run one ghostty build at a time (the apply/revert shares the submodule working tree).
 - `Resources/git-wt` (`https://github.com/khoi/git-wt.git`): Bundled `wt` CLI used by Supacode Git worktree flows at runtime.
+
+## Personal fork distribution (customcode)
+
+- This fork (`sspross/supacode`) distributes personal builds through its own Sparkle channel: `supacode/Info.plist` points `SUFeedURL` at the rolling `personal` GitHub release and `SUPublicEDKey` at the personal EdDSA key. `SUAutomaticallyUpdate` is `false` so installed apps prompt instead of silently replacing themselves. Keep these overrides when merging upstream Info.plist changes.
+- `make release-personal` builds Release (`dist-personal`), signs with the private key at `~/.config/supacode-personal/sparkle_eddsa_private.key` (also in the login Keychain under account `supacode-personal`), regenerates `appcast.xml` via Sparkle's `generate_appcast`, and uploads zip + appcast to the `personal` release with `gh`.
+- `CFBundleVersion` for personal builds is `git rev-list --count HEAD`, injected as `CURRENT_PROJECT_VERSION` at build time — monotonic across upstream merges. A rebuild without a new commit produces the same build number, so Sparkle won't offer it; commit first, then release.
+- The fork is public, so release assets are publicly downloadable — don't embed secrets in personal builds.
 
 ## Agent skills
 

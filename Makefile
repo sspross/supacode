@@ -34,7 +34,7 @@ SUPACODE_SKIP_PREFLIGHT ?=
 SELECT_DEVELOPER_DIR = DEVELOPER_DIR="$$(./scripts/select-developer-dir.sh)"; export DEVELOPER_DIR
 
 .DEFAULT_GOAL := help
-.PHONY: doctor preflight build-ghostty-xcframework build-zmx generate-project generate-project-sources inspect-dependencies warm-cache build-app run-app install-dev-build archive export-archive dist-personal format lint check test bump-version bump-and-release log-stream
+.PHONY: doctor preflight build-ghostty-xcframework build-zmx generate-project generate-project-sources inspect-dependencies warm-cache build-app run-app install-dev-build archive export-archive dist-personal release-personal format lint check test bump-version bump-and-release log-stream
 
 ifdef CI
 TUIST_INSTALL_FLAGS := --force-resolved-versions
@@ -138,32 +138,42 @@ export-archive: # Export xarchive
 	$(SELECT_DEVELOPER_DIR); \
 	bash -o pipefail -c 'xcodebuild -exportArchive -archivePath build/supacode.xcarchive -exportPath build/export -exportOptionsPlist build/ExportOptions.plist 2>&1 | { mise exec -- xcbeautify --quiet --disable-logging || cat; }'
 
-# Personal-fork distribution: Release build, ad-hoc signed, with Sparkle auto-update
-# stripped so the transferred app is never silently replaced by the official feed.
-dist-personal: $(TUIST_RELEASE_GENERATION_STAMP) # Build Release with Sparkle disabled and zip for personal distribution
+# Personal-fork distribution channel. Info.plist points SUFeedURL/SUPublicEDKey at the
+# rolling "personal" GitHub release on the fork, so every build updates from our own
+# Sparkle feed instead of the official one. The build number is the commit count, which
+# is monotonic across upstream merges — Sparkle only offers an update after a new commit.
+PERSONAL_RELEASE_TAG := personal
+PERSONAL_DOWNLOAD_URL := https://github.com/sspross/supacode/releases/download/$(PERSONAL_RELEASE_TAG)/
+PERSONAL_SPARKLE_KEY := $(HOME)/.config/supacode-personal/sparkle_eddsa_private.key
+SPARKLE_BIN := Tuist/.build/artifacts/sparkle/Sparkle/bin
+
+dist-personal: $(TUIST_RELEASE_GENERATION_STAMP) # Build Release for the personal Sparkle channel and zip it
 	$(SELECT_DEVELOPER_DIR); \
-	bash -o pipefail -c 'xcodebuild -workspace "$(PROJECT_WORKSPACE)" -scheme "$(APP_SCHEME)" -configuration Release build -skipMacroValidation $(XCODEBUILD_FLAGS) 2>&1 | { mise exec -- xcbeautify --disable-logging || cat; }'; \
+	build_num="$$(git rev-list --count HEAD)"; export build_num; \
+	bash -o pipefail -c 'xcodebuild -workspace "$(PROJECT_WORKSPACE)" -scheme "$(APP_SCHEME)" -configuration Release build CURRENT_PROJECT_VERSION="$$build_num" -skipMacroValidation $(XCODEBUILD_FLAGS) 2>&1 | { mise exec -- xcbeautify --disable-logging || cat; }'; \
 	settings="$$(xcodebuild -workspace "$(PROJECT_WORKSPACE)" -scheme "$(APP_SCHEME)" -configuration Release -showBuildSettings -json 2>/dev/null)"; \
 	build_dir="$$(echo "$$settings" | jq -r '.[0].buildSettings.BUILT_PRODUCTS_DIR')"; \
 	product="$$(echo "$$settings" | jq -r '.[0].buildSettings.FULL_PRODUCT_NAME')"; \
 	src="$$build_dir/$$product"; \
-	staged="dist/$$product"; \
+	version="$$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$$src/Contents/Info.plist")"; \
 	rm -rf dist; \
 	mkdir -p dist; \
-	ditto "$$src" "$$staged"; \
-	plist="$$staged/Contents/Info.plist"; \
-	/usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$$plist" 2>/dev/null || true; \
-	/usr/libexec/PlistBuddy -c "Set :SUEnableAutomaticChecks false" "$$plist"; \
-	/usr/libexec/PlistBuddy -c "Set :SUAutomaticallyUpdate false" "$$plist"; \
-	codesign --force --sign - --preserve-metadata=entitlements,requirements,flags "$$staged"; \
-	codesign --verify --strict "$$staged"; \
-	version="$$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$$plist")"; \
-	sha="$$(git rev-parse --short HEAD)"; \
-	zip_path="dist/supacode-personal-$$version-$$sha.zip"; \
-	ditto -c -k --keepParent "$$staged" "$$zip_path"; \
-	echo "created $$zip_path"; \
-	echo "transfer it, unzip into /Applications on the target Mac, then run:"; \
-	echo "  xattr -dr com.apple.quarantine /Applications/$$product"
+	zip_path="dist/supacode-personal-$$version-$$build_num.zip"; \
+	ditto -c -k --keepParent "$$src" "$$zip_path"; \
+	echo "created $$zip_path"
+
+release-personal: dist-personal # Publish the personal build + Sparkle appcast to the rolling GitHub release
+	@if [ ! -f "$(PERSONAL_SPARKLE_KEY)" ]; then \
+		echo "missing Sparkle private key: $(PERSONAL_SPARKLE_KEY)"; \
+		echo "restore it with: $(SPARKLE_BIN)/generate_keys --account supacode-personal -x $(PERSONAL_SPARKLE_KEY)"; \
+		exit 1; \
+	fi
+	$(SPARKLE_BIN)/generate_appcast --ed-key-file "$(PERSONAL_SPARKLE_KEY)" --download-url-prefix "$(PERSONAL_DOWNLOAD_URL)" -o dist/appcast.xml dist
+	gh release view "$(PERSONAL_RELEASE_TAG)" >/dev/null 2>&1 || \
+		gh release create "$(PERSONAL_RELEASE_TAG)" --prerelease --title "Personal builds" \
+			--notes "Rolling personal-build channel for the customcode fork. Installed apps update via appcast.xml here."
+	gh release upload "$(PERSONAL_RELEASE_TAG)" dist/supacode-personal-*.zip dist/appcast.xml --clobber
+	@echo "published: https://github.com/sspross/supacode/releases/tag/$(PERSONAL_RELEASE_TAG)"
 
 test: $(TUIST_DEVELOPMENT_GENERATION_STAMP) # Run all tests
 	@$(SELECT_DEVELOPER_DIR); \

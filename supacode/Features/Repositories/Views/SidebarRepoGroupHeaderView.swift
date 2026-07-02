@@ -50,7 +50,7 @@ struct SidebarRepoGroupHeaderRow: View {
     // the dominant gap so the last member above doesn't read as part of this
     // group.
     .listRowInsets(.top, 20)
-    .listRowInsets(.bottom, 2)
+    .listRowInsets(.bottom, 0)
     .help(isCollapsed ? "Expand \(name)" : "Collapse \(name)")
     .accessibilityLabel("\(name) group, \(isCollapsed ? "collapsed" : "expanded")")
     .contextMenu {

@@ -280,6 +280,9 @@ struct SidebarStructure: Equatable, Sendable {
   /// this to translate `.onMove` flat offsets into the index space the
   /// `.repositoriesMoved` reducer action expects.
   var reorderableRepositoryIDs: [Repository.ID]
+  /// Repositories whose section rendered under an expanded group header.
+  /// The view indents these so they read as children of the group.
+  var groupedRepositoryIDs: Set<Repository.ID>
 
   static let empty = SidebarStructure(
     sections: [],
@@ -288,7 +291,8 @@ struct SidebarStructure: Equatable, Sendable {
     slotByID: [:],
     repositoryHighlightByID: [:],
     hoistSummaryByRepositoryID: [:],
-    reorderableRepositoryIDs: []
+    reorderableRepositoryIDs: [],
+    groupedRepositoryIDs: []
   )
 
   /// First-frame value used before the reducer recomputes. Surfaces the
@@ -301,7 +305,8 @@ struct SidebarStructure: Equatable, Sendable {
     slotByID: [:],
     repositoryHighlightByID: [:],
     hoistSummaryByRepositoryID: [:],
-    reorderableRepositoryIDs: []
+    reorderableRepositoryIDs: [],
+    groupedRepositoryIDs: []
   )
 }
 
@@ -580,7 +585,8 @@ extension RepositoriesFeature.State {
         slotByID: [:],
         repositoryHighlightByID: [:],
         hoistSummaryByRepositoryID: [:],
-        reorderableRepositoryIDs: []
+        reorderableRepositoryIDs: [],
+        groupedRepositoryIDs: []
       )
     }
 
@@ -615,7 +621,8 @@ extension RepositoriesFeature.State {
       slotByID: hotkey.slotByID,
       repositoryHighlightByID: highlightProjections.tags,
       hoistSummaryByRepositoryID: highlightProjections.summaries,
-      reorderableRepositoryIDs: repoSections.reorderableRepositoryIDs
+      reorderableRepositoryIDs: repoSections.reorderableRepositoryIDs,
+      groupedRepositoryIDs: repoSections.groupedRepositoryIDs
     )
   }
 
@@ -663,11 +670,13 @@ extension RepositoriesFeature.State {
   private struct RepositorySectionsBuild {
     var sections: [SidebarStructure.Section]
     var reorderableRepositoryIDs: [Repository.ID]
+    var groupedRepositoryIDs: Set<Repository.ID>
   }
 
   private func buildRepositorySections(hoisted: Set<Worktree.ID>) -> RepositorySectionsBuild {
     var sections: [SidebarStructure.Section] = []
     var reorderableRepositoryIDs: [Repository.ID] = []
+    var groupedRepositoryIDs: Set<Repository.ID> = []
     let pendingIDsByRepo: [Repository.ID: Set<Worktree.ID>] = Dictionary(
       grouping: pendingWorktrees,
       by: \.repositoryID
@@ -736,13 +745,15 @@ extension RepositoriesFeature.State {
           localRootsByID: localRootsByID
         ) {
           sections.append(section)
+          groupedRepositoryIDs.insert(member)
         }
       }
     }
 
     return RepositorySectionsBuild(
       sections: sections,
-      reorderableRepositoryIDs: reorderableRepositoryIDs
+      reorderableRepositoryIDs: reorderableRepositoryIDs,
+      groupedRepositoryIDs: groupedRepositoryIDs
     )
   }
 

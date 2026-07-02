@@ -28,8 +28,14 @@ struct SidebarRepoGroupHeaderRow: View {
         Text(name)
           .font(.body.weight(.semibold))
           .lineLimit(1)
-          .foregroundStyle(.primary)
-        Spacer(minLength: 0)
+          .foregroundStyle(.secondary)
+        // Trailing rule filling the rest of the row, so the header reads as
+        // a section divider rather than a primary content row.
+        Rectangle()
+          .fill(.separator)
+          .frame(height: 1)
+          .frame(maxWidth: .infinity)
+          .accessibilityHidden(true)
         if isCollapsed {
           SidebarPathGroupAggregatedIndicators(parentStore: store, leafIDs: leafRowIDs)
         }
@@ -43,7 +49,7 @@ struct SidebarRepoGroupHeaderRow: View {
     // group's last row closely. A larger top inset makes the group boundary
     // the dominant gap so the last member above doesn't read as part of this
     // group.
-    .listRowInsets(.top, 16)
+    .listRowInsets(.top, 20)
     .listRowInsets(.bottom, 2)
     .help(isCollapsed ? "Expand \(name)" : "Collapse \(name)")
     .accessibilityLabel("\(name) group, \(isCollapsed ? "collapsed" : "expanded")")

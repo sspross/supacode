@@ -7,6 +7,11 @@ import SwiftUI
 enum SidebarNestLayout {
   /// Pixel step a row indents per branch-nesting depth level.
   static let indentStep: CGFloat = 14
+  /// Leading inset applied to a repository section rendered under an expanded
+  /// group header, so members read as children of the header. Matches the
+  /// header's chevron width (12) + `HStack` spacing (6): member titles line up
+  /// with the group title.
+  static let groupMemberIndent: CGFloat = 18
 }
 
 /// Repo identity carried alongside a sidebar row so the highlight sections

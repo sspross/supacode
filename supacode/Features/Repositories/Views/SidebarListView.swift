@@ -257,6 +257,7 @@ private struct SidebarSectionDispatcher: View {
         customTitle: customTitle,
         color: color,
         isRemote: isRemote,
+        groupMemberInset: groupMemberInset(for: repositoryID),
         store: store
       )
     case .folder(let repositoryID, let rowID):
@@ -272,6 +273,7 @@ private struct SidebarSectionDispatcher: View {
             store: store,
             terminalManager: terminalManager
           )
+          .padding(.leading, groupMemberInset(for: repositoryID))
         } header: {
           EmptyView()
         }
@@ -282,6 +284,7 @@ private struct SidebarSectionDispatcher: View {
           repository: repository,
           groups: groups,
           hoistSummary: structure.hoistSummaryByRepositoryID[repositoryID],
+          groupMemberInset: groupMemberInset(for: repositoryID),
           shortcutHintByID: shortcutHintByID,
           selectedWorktreeIDs: selectedWorktreeIDs,
           store: store,
@@ -289,6 +292,12 @@ private struct SidebarSectionDispatcher: View {
         )
       }
     }
+  }
+
+  /// Leading inset for a repository section that renders under an expanded
+  /// group header; 0 for top-level repos so they stay flush at the margin.
+  private func groupMemberInset(for repositoryID: Repository.ID) -> CGFloat {
+    structure.groupedRepositoryIDs.contains(repositoryID) ? SidebarNestLayout.groupMemberIndent : 0
   }
 }
 
@@ -298,6 +307,10 @@ private struct SidebarGitRepositorySection: View {
   /// Non-nil when one or more of this repo's rows were hoisted into the
   /// highlight sections; rendered as a muted summary line under the rows.
   let hoistSummary: SidebarHoistSummary?
+  /// Leading inset when this repo renders under an expanded group header
+  /// (0 when top-level); applied to the header and every row so the whole
+  /// section reads as a child of the group.
+  let groupMemberInset: CGFloat
   let shortcutHintByID: [Worktree.ID: String]
   let selectedWorktreeIDs: Set<Worktree.ID>
   @Bindable var store: StoreOf<RepositoriesFeature>
@@ -315,12 +328,14 @@ private struct SidebarGitRepositorySection: View {
         store: store,
         terminalManager: terminalManager
       )
+      .padding(.leading, groupMemberInset)
       if let hoistSummary {
         SidebarHoistSummaryRow(
           repositoryName: Repository.sidebarDisplayName(custom: section?.title, fallback: repository.name),
           summary: hoistSummary,
           store: store
         )
+        .padding(.leading, groupMemberInset)
       }
     } header: {
       RepoSectionHeaderView(
@@ -331,6 +346,7 @@ private struct SidebarGitRepositorySection: View {
         hostInfo: repository.host?.displayAuthority,
         isResolving: isResolvingRemote
       )
+      .padding(.leading, groupMemberInset)
     }
     .sectionActions {
       SidebarSectionActionsView(
@@ -476,6 +492,8 @@ private struct SidebarFailedRepositorySection: View {
   /// A disconnected SSH repo: route Remove to the remote config store and offer
   /// "Edit Connection…" to fix a bad host/path, rather than the local-roots flow.
   let isRemote: Bool
+  /// Leading inset when this repo renders under an expanded group header.
+  let groupMemberInset: CGFloat
   let store: StoreOf<RepositoriesFeature>
 
   private func removeFailedRepository() {
@@ -493,6 +511,7 @@ private struct SidebarFailedRepositorySection: View {
         path: path,
         removeRepository: removeFailedRepository
       )
+      .padding(.leading, groupMemberInset)
       .tag(SidebarSelection.failedRepository(repositoryID))
       .moveDisabled(true)
     } header: {
@@ -503,6 +522,7 @@ private struct SidebarFailedRepositorySection: View {
         isRemoving: false,
         hostInfo: store.state.repositories[id: repositoryID]?.host?.displayAuthority
       )
+      .padding(.leading, groupMemberInset)
     }
     .sectionActions {
       // No `+`: the repo isn't loadable, so worktree create is meaningless.

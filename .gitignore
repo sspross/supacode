@@ -8,6 +8,9 @@ xcuserdata/
 ## Local build output (xcodebuild -derivedDataPath build).
 build/
 
+## Personal-fork distribution output (make dist-personal)
+dist/
+
 ## Obj-C/Swift specific
 *.hmap
 

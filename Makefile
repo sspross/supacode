@@ -34,7 +34,7 @@ SUPACODE_SKIP_PREFLIGHT ?=
 SELECT_DEVELOPER_DIR = DEVELOPER_DIR="$$(./scripts/select-developer-dir.sh)"; export DEVELOPER_DIR
 
 .DEFAULT_GOAL := help
-.PHONY: doctor preflight build-ghostty-xcframework build-zmx generate-project generate-project-sources inspect-dependencies warm-cache build-app run-app install-dev-build archive export-archive format lint check test bump-version bump-and-release log-stream
+.PHONY: doctor preflight build-ghostty-xcframework build-zmx generate-project generate-project-sources inspect-dependencies warm-cache build-app run-app install-dev-build archive export-archive dist-personal format lint check test bump-version bump-and-release log-stream
 
 ifdef CI
 TUIST_INSTALL_FLAGS := --force-resolved-versions
@@ -137,6 +137,33 @@ archive: $(TUIST_RELEASE_GENERATION_STAMP) # Archive Release build for distribut
 export-archive: # Export xarchive
 	$(SELECT_DEVELOPER_DIR); \
 	bash -o pipefail -c 'xcodebuild -exportArchive -archivePath build/supacode.xcarchive -exportPath build/export -exportOptionsPlist build/ExportOptions.plist 2>&1 | { mise exec -- xcbeautify --quiet --disable-logging || cat; }'
+
+# Personal-fork distribution: Release build, ad-hoc signed, with Sparkle auto-update
+# stripped so the transferred app is never silently replaced by the official feed.
+dist-personal: $(TUIST_RELEASE_GENERATION_STAMP) # Build Release with Sparkle disabled and zip for personal distribution
+	$(SELECT_DEVELOPER_DIR); \
+	bash -o pipefail -c 'xcodebuild -workspace "$(PROJECT_WORKSPACE)" -scheme "$(APP_SCHEME)" -configuration Release build -skipMacroValidation $(XCODEBUILD_FLAGS) 2>&1 | { mise exec -- xcbeautify --disable-logging || cat; }'; \
+	settings="$$(xcodebuild -workspace "$(PROJECT_WORKSPACE)" -scheme "$(APP_SCHEME)" -configuration Release -showBuildSettings -json 2>/dev/null)"; \
+	build_dir="$$(echo "$$settings" | jq -r '.[0].buildSettings.BUILT_PRODUCTS_DIR')"; \
+	product="$$(echo "$$settings" | jq -r '.[0].buildSettings.FULL_PRODUCT_NAME')"; \
+	src="$$build_dir/$$product"; \
+	staged="dist/$$product"; \
+	rm -rf dist; \
+	mkdir -p dist; \
+	ditto "$$src" "$$staged"; \
+	plist="$$staged/Contents/Info.plist"; \
+	/usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$$plist" 2>/dev/null || true; \
+	/usr/libexec/PlistBuddy -c "Set :SUEnableAutomaticChecks false" "$$plist"; \
+	/usr/libexec/PlistBuddy -c "Set :SUAutomaticallyUpdate false" "$$plist"; \
+	codesign --force --sign - --preserve-metadata=entitlements,requirements,flags "$$staged"; \
+	codesign --verify --strict "$$staged"; \
+	version="$$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$$plist")"; \
+	sha="$$(git rev-parse --short HEAD)"; \
+	zip_path="dist/supacode-personal-$$version-$$sha.zip"; \
+	ditto -c -k --keepParent "$$staged" "$$zip_path"; \
+	echo "created $$zip_path"; \
+	echo "transfer it, unzip into /Applications on the target Mac, then run:"; \
+	echo "  xattr -dr com.apple.quarantine /Applications/$$product"
 
 test: $(TUIST_DEVELOPMENT_GENERATION_STAMP) # Run all tests
 	@$(SELECT_DEVELOPER_DIR); \

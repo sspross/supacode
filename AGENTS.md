@@ -13,6 +13,7 @@ make test                        # Run all tests
 make log-stream                  # Stream app logs (subsystem: app.supabit.supacode)
 make bump-version                # Bump patch version and create git tag
 make bump-and-release            # Bump version and push to trigger release
+make dist-personal               # Release build with Sparkle disabled, zipped for personal distribution
 ```
 
 Run a single test class or method:

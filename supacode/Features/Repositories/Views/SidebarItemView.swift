@@ -12,11 +12,14 @@ enum SidebarNestLayout {
   /// header's chevron width (12) + `HStack` spacing (6): member titles line up
   /// with the group title.
   static let groupMemberIndent: CGFloat = 18
-  /// Negative top padding applied to the first member section under an
-  /// expanded group header. The header is a bare list row in its own implicit
-  /// section, so the first member pays two section boundaries where siblings
-  /// pay one; this pulls it back to the sibling rhythm.
-  static let groupFirstMemberTopAdjustment: CGFloat = -16
+  /// Top padding on the group header's content (it renders as a section
+  /// header, which ignores `listRowInsets`). Keeps the boundary above a group
+  /// larger than the in-group rhythm so groups read as separated blocks.
+  static let groupHeaderTopPadding: CGFloat = 8
+  /// Bottom padding on the group header's content; brings the header →
+  /// first-member gap up to the same rhythm as repo → repo (measured ~21pt
+  /// text-edge-to-text-edge in the `.sidebar` list style).
+  static let groupHeaderBottomPadding: CGFloat = 4
 }
 
 /// Repo identity carried alongside a sidebar row so the highlight sections

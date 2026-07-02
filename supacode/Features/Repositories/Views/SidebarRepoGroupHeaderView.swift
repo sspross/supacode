@@ -2,11 +2,16 @@ import ComposableArchitecture
 import OrderedCollections
 import SwiftUI
 
-/// Top-level sidebar row for a user-defined repository group. Clicking
-/// toggles collapse; while collapsed the member repo sections are omitted
-/// from the structure and this row shows their aggregated activity
-/// indicators (same per-leaf-scoped pattern as nested branch groups, so a
-/// per-row tick invalidates only this row).
+/// Top-level sidebar header for a user-defined repository group, rendered as
+/// the header of a content-less `Section`. It must NOT be a bare list row:
+/// SwiftUI wraps bare rows in an implicit section whose extra boundary makes
+/// the header → first-member gap ~14pt larger than the repo → repo rhythm
+/// (measured; negative padding can't cancel it without overlapping the row).
+/// As a section header every list boundary is the same kind, so the rhythm is
+/// uniform by construction. Clicking toggles collapse; while collapsed the
+/// member repo sections are omitted from the structure and this header shows
+/// their aggregated activity indicators (same per-leaf-scoped pattern as
+/// nested branch groups, so a per-row tick invalidates only this header).
 struct SidebarRepoGroupHeaderRow: View {
   let groupID: SidebarGroupID
   let name: String
@@ -43,14 +48,12 @@ struct SidebarRepoGroupHeaderRow: View {
       .contentShape(.interaction, .rect)
     }
     .buttonStyle(.plain)
-    .listRowInsets(.leading, 0)
-    // The `.sidebar` list style puts its big spacing above member repo
-    // *sections*, while this header is a plain row that trails the previous
-    // group's last row closely. A larger top inset makes the group boundary
-    // the dominant gap so the last member above doesn't read as part of this
-    // group.
-    .listRowInsets(.top, 20)
-    .listRowInsets(.bottom, 0)
+    // Section headers ignore `listRowInsets`; padding is the layout knob.
+    // Extra top keeps the group boundary the dominant gap (the last member
+    // above shouldn't read as part of this group); the small bottom brings
+    // header → first-member to the same ~21pt rhythm as repo → repo.
+    .padding(.top, SidebarNestLayout.groupHeaderTopPadding)
+    .padding(.bottom, SidebarNestLayout.groupHeaderBottomPadding)
     .help(isCollapsed ? "Expand \(name)" : "Collapse \(name)")
     .accessibilityLabel("\(name) group, \(isCollapsed ? "collapsed" : "expanded")")
     .contextMenu {

@@ -243,13 +243,21 @@ private struct SidebarSectionDispatcher: View {
       )
       .moveDisabled(true)
     case .repoGroupHeader(let groupID, let name, let isCollapsed, _, let leafRowIDs):
-      SidebarRepoGroupHeaderRow(
-        groupID: groupID,
-        name: name,
-        isCollapsed: isCollapsed,
-        leafRowIDs: leafRowIDs,
-        store: store
-      )
+      // Content-less Section, NOT a bare row: a bare row gets wrapped in an
+      // implicit list section whose extra boundary inflates the gap to the
+      // first member section by ~14pt (see SidebarRepoGroupHeaderRow docs).
+      // As a Section it stays one ForEach element at the same flat index, so
+      // `handleRepositoryMove`'s header-drag special case keeps working.
+      Section {
+      } header: {
+        SidebarRepoGroupHeaderRow(
+          groupID: groupID,
+          name: name,
+          isCollapsed: isCollapsed,
+          leafRowIDs: leafRowIDs,
+          store: store
+        )
+      }
     case .failedRepository(let repositoryID, let rootURL, let customTitle, let color, let isRemote):
       SidebarFailedRepositorySection(
         repositoryID: repositoryID,
@@ -258,7 +266,6 @@ private struct SidebarSectionDispatcher: View {
         color: color,
         isRemote: isRemote,
         groupMemberInset: groupMemberInset(for: repositoryID),
-        firstMemberTopAdjustment: firstGroupMemberTopAdjustment(),
         store: store
       )
     case .folder(let repositoryID, let rowID):
@@ -275,7 +282,6 @@ private struct SidebarSectionDispatcher: View {
             terminalManager: terminalManager
           )
           .padding(.leading, groupMemberInset(for: repositoryID))
-          .padding(.top, firstGroupMemberTopAdjustment())
         } header: {
           EmptyView()
         }
@@ -287,7 +293,6 @@ private struct SidebarSectionDispatcher: View {
           groups: groups,
           hoistSummary: structure.hoistSummaryByRepositoryID[repositoryID],
           groupMemberInset: groupMemberInset(for: repositoryID),
-          firstMemberTopAdjustment: firstGroupMemberTopAdjustment(),
           shortcutHintByID: shortcutHintByID,
           selectedWorktreeIDs: selectedWorktreeIDs,
           store: store,
@@ -302,20 +307,6 @@ private struct SidebarSectionDispatcher: View {
   private func groupMemberInset(for repositoryID: Repository.ID) -> CGFloat {
     structure.groupedRepositoryIDs.contains(repositoryID) ? SidebarNestLayout.groupMemberIndent : 0
   }
-
-  /// Negative top padding for the first member section of an expanded group.
-  /// The group header is a bare list row, so it sits in its own implicit list
-  /// section: the first member below it pays two section boundaries (header
-  /// row's bottom + its own top) where siblings pay one, reading as a much
-  /// bigger gap. Pulling the first member up makes header → first-repo match
-  /// the repo → repo rhythm.
-  private func firstGroupMemberTopAdjustment() -> CGFloat {
-    guard let index = structure.sections.firstIndex(where: { $0.id == section.id }), index > 0,
-      case .repoGroupHeader(_, _, let isCollapsed, _, _) = structure.sections[index - 1],
-      !isCollapsed
-    else { return 0 }
-    return SidebarNestLayout.groupFirstMemberTopAdjustment
-  }
 }
 
 private struct SidebarGitRepositorySection: View {
@@ -328,9 +319,6 @@ private struct SidebarGitRepositorySection: View {
   /// (0 when top-level); applied to the header and every row so the whole
   /// section reads as a child of the group.
   let groupMemberInset: CGFloat
-  /// Negative top padding when this repo is the first member under its group
-  /// header (0 otherwise); cancels the doubled section-boundary gap.
-  let firstMemberTopAdjustment: CGFloat
   let shortcutHintByID: [Worktree.ID: String]
   let selectedWorktreeIDs: Set<Worktree.ID>
   @Bindable var store: StoreOf<RepositoriesFeature>
@@ -367,7 +355,6 @@ private struct SidebarGitRepositorySection: View {
         isResolving: isResolvingRemote
       )
       .padding(.leading, groupMemberInset)
-      .padding(.top, firstMemberTopAdjustment)
     }
     .sectionActions {
       SidebarSectionActionsView(
@@ -515,9 +502,6 @@ private struct SidebarFailedRepositorySection: View {
   let isRemote: Bool
   /// Leading inset when this repo renders under an expanded group header.
   let groupMemberInset: CGFloat
-  /// Negative top padding when this repo is the first member under its group
-  /// header (0 otherwise); cancels the doubled section-boundary gap.
-  let firstMemberTopAdjustment: CGFloat
   let store: StoreOf<RepositoriesFeature>
 
   private func removeFailedRepository() {
@@ -547,7 +531,6 @@ private struct SidebarFailedRepositorySection: View {
         hostInfo: store.state.repositories[id: repositoryID]?.host?.displayAuthority
       )
       .padding(.leading, groupMemberInset)
-      .padding(.top, firstMemberTopAdjustment)
     }
     .sectionActions {
       // No `+`: the repo isn't loadable, so worktree create is meaningless.

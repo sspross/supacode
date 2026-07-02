@@ -143,7 +143,9 @@ export-archive: # Export xarchive
 # Sparkle feed instead of the official one. The build number is the commit count, which
 # is monotonic across upstream merges — Sparkle only offers an update after a new commit.
 PERSONAL_RELEASE_TAG := personal
-PERSONAL_DOWNLOAD_URL := https://github.com/sspross/supacode/releases/download/$(PERSONAL_RELEASE_TAG)/
+# Explicit -R: in a fork clone with an upstream remote, bare gh resolves to the parent repo.
+PERSONAL_REPO := sspross/supacode
+PERSONAL_DOWNLOAD_URL := https://github.com/$(PERSONAL_REPO)/releases/download/$(PERSONAL_RELEASE_TAG)/
 PERSONAL_SPARKLE_KEY := $(HOME)/.config/supacode-personal/sparkle_eddsa_private.key
 SPARKLE_BIN := Tuist/.build/artifacts/sparkle/Sparkle/bin
 
@@ -169,10 +171,13 @@ release-personal: dist-personal # Publish the personal build + Sparkle appcast t
 		exit 1; \
 	fi
 	$(SPARKLE_BIN)/generate_appcast --ed-key-file "$(PERSONAL_SPARKLE_KEY)" --download-url-prefix "$(PERSONAL_DOWNLOAD_URL)" -o dist/appcast.xml dist
-	gh release view "$(PERSONAL_RELEASE_TAG)" >/dev/null 2>&1 || \
-		gh release create "$(PERSONAL_RELEASE_TAG)" --prerelease --title "Personal builds" \
-			--notes "Rolling personal-build channel for the customcode fork. Installed apps update via appcast.xml here."
-	gh release upload "$(PERSONAL_RELEASE_TAG)" dist/supacode-personal-*.zip dist/appcast.xml --clobber
+	gh release view -R "$(PERSONAL_REPO)" "$(PERSONAL_RELEASE_TAG)" >/dev/null 2>&1 || { \
+		git tag -f "$(PERSONAL_RELEASE_TAG)"; \
+		git push origin "$(PERSONAL_RELEASE_TAG)"; \
+		gh release create -R "$(PERSONAL_REPO)" "$(PERSONAL_RELEASE_TAG)" --verify-tag --prerelease --title "Personal builds" \
+			--notes "Rolling personal-build channel for the customcode fork. Installed apps update via appcast.xml here."; \
+	}
+	gh release upload -R "$(PERSONAL_REPO)" "$(PERSONAL_RELEASE_TAG)" dist/supacode-personal-*.zip dist/appcast.xml --clobber
 	@echo "published: https://github.com/sspross/supacode/releases/tag/$(PERSONAL_RELEASE_TAG)"
 
 test: $(TUIST_DEVELOPMENT_GENERATION_STAMP) # Run all tests

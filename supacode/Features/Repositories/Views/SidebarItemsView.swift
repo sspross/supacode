@@ -318,7 +318,9 @@ private struct SidebarPathGroupHeaderRow: View {
 /// tool storm on one row only invalidates this view (not the surrounding row
 /// chrome). Aggregation itself delegates to the tested pure function in
 /// `SidebarBranchNesting` so there is one algorithm and one set of tests.
-private struct SidebarPathGroupAggregatedIndicators: View {
+/// Internal (not private): collapsed repo-group headers reuse it (see
+/// `SidebarRepoGroupHeaderRow`).
+struct SidebarPathGroupAggregatedIndicators: View {
   @Bindable var parentStore: StoreOf<RepositoriesFeature>
   let leafIDs: [SidebarItemID]
 
@@ -690,6 +692,8 @@ private struct SidebarItemContextMenu: View {
           }
           .help("Edit the SSH server, port, user, or path")
         }
+        // Folder rows have no section ellipsis menu, so grouping lives here.
+        SidebarMoveToGroupMenu(repositoryID: repositoryID, store: store)
         Divider()
       } else if let row = contextRows.first,
         !row.isMainWorktree,

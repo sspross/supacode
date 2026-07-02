@@ -579,4 +579,216 @@ struct SidebarStateTests {
     #expect(carried?.title == "Unpinned-Payload")
     #expect(carried?.color == .blue)
   }
+
+  // MARK: - Repository groups
+
+  private let groupID = SidebarGroupID("group-1")
+  private let otherGroupID = SidebarGroupID("group-2")
+
+  /// Seeds sections for the given repos in order (mirrors `reorderSections`'
+  /// materialise-on-demand behavior for repos that already have curation).
+  private func makeStateWithSections(_ repositoryIDs: [Repository.ID]) -> SidebarState {
+    var state = SidebarState()
+    for repositoryID in repositoryIDs {
+      state.sections[repositoryID] = .init()
+    }
+    return state
+  }
+
+  @Test func createGroupAssignsMembersAndKeepsThemContiguous() {
+    var state = makeStateWithSections(["/a", "/b", "/c", "/d"])
+
+    state.createGroup(id: groupID, name: "  Work  ", memberRepositoryIDs: ["/a", "/c"])
+
+    #expect(state.groups[groupID]?.name == "Work")
+    #expect(state.groups[groupID]?.collapsed == false)
+    #expect(state.memberRepositoryIDs(of: groupID) == ["/a", "/c"])
+    // "/c" moved up next to "/a" so the group run is contiguous.
+    #expect(Array(state.sections.keys) == ["/a", "/c", "/b", "/d"])
+  }
+
+  @Test func createGroupNoopsOnEmptyNameOrMembers() {
+    var state = makeStateWithSections(["/a"])
+
+    state.createGroup(id: groupID, name: "   ", memberRepositoryIDs: ["/a"])
+    state.createGroup(id: otherGroupID, name: "Work", memberRepositoryIDs: [])
+
+    #expect(state.groups.isEmpty)
+    #expect(state.groupID(of: "/a") == nil)
+  }
+
+  @Test func assignToNilReturnsRepoToTopLevelAfterRunAndDeletesEmptyGroup() {
+    var state = makeStateWithSections(["/a", "/b", "/c"])
+    state.createGroup(id: groupID, name: "Work", memberRepositoryIDs: ["/a", "/b"])
+
+    state.assign(repository: "/a", toGroup: nil)
+
+    // "/a" parked just after the group's remaining run.
+    #expect(Array(state.sections.keys) == ["/b", "/a", "/c"])
+    #expect(state.groupID(of: "/a") == nil)
+    #expect(state.memberRepositoryIDs(of: groupID) == ["/b"])
+
+    state.assign(repository: "/b", toGroup: nil)
+
+    // Last member left → group auto-deletes.
+    #expect(state.groups[groupID] == nil)
+  }
+
+  @Test func assignBetweenGroupsMovesSectionIntoNewRun() {
+    var state = makeStateWithSections(["/a", "/b", "/c", "/d"])
+    state.createGroup(id: groupID, name: "Work", memberRepositoryIDs: ["/a", "/b"])
+    state.createGroup(id: otherGroupID, name: "Play", memberRepositoryIDs: ["/c", "/d"])
+
+    state.assign(repository: "/a", toGroup: otherGroupID)
+
+    #expect(state.groupID(of: "/a") == otherGroupID)
+    #expect(state.memberRepositoryIDs(of: otherGroupID) == ["/c", "/d", "/a"])
+    #expect(Array(state.sections.keys) == ["/b", "/c", "/d", "/a"])
+  }
+
+  @Test func assignToUnknownGroupIsNoop() {
+    var state = makeStateWithSections(["/a"])
+
+    state.assign(repository: "/a", toGroup: SidebarGroupID("missing"))
+
+    #expect(state.groupID(of: "/a") == nil)
+  }
+
+  @Test func dissolveGroupClearsMembershipInPlace() {
+    var state = makeStateWithSections(["/a", "/b", "/c"])
+    state.createGroup(id: groupID, name: "Work", memberRepositoryIDs: ["/a", "/b"])
+
+    state.dissolveGroup(id: groupID)
+
+    #expect(state.groups[groupID] == nil)
+    #expect(state.groupID(of: "/a") == nil)
+    #expect(state.groupID(of: "/b") == nil)
+    #expect(Array(state.sections.keys) == ["/a", "/b", "/c"])
+  }
+
+  @Test func renameGroupTrimsAndIgnoresWhitespaceOnlyNames() {
+    var state = makeStateWithSections(["/a"])
+    state.createGroup(id: groupID, name: "Work", memberRepositoryIDs: ["/a"])
+
+    state.renameGroup(id: groupID, name: "  Projects  ")
+    #expect(state.groups[groupID]?.name == "Projects")
+
+    state.renameGroup(id: groupID, name: "   ")
+    #expect(state.groups[groupID]?.name == "Projects")
+  }
+
+  @Test func setGroupCollapsedTogglesFlag() {
+    var state = makeStateWithSections(["/a"])
+    state.createGroup(id: groupID, name: "Work", memberRepositoryIDs: ["/a"])
+
+    state.setGroupCollapsed(id: groupID, collapsed: true)
+    #expect(state.groups[groupID]?.collapsed == true)
+
+    state.setGroupCollapsed(id: groupID, collapsed: false)
+    #expect(state.groups[groupID]?.collapsed == false)
+  }
+
+  @Test func groupIDOfTreatsStaleMembershipAsUngrouped() {
+    var state = makeStateWithSections(["/a"])
+    state.sections["/a"]?.groupID = SidebarGroupID("deleted-group")
+
+    #expect(state.groupID(of: "/a") == nil)
+  }
+
+  @Test func reconcileMembershipJoinsGroupWhenDroppedStrictlyInside() {
+    var state = makeStateWithSections(["/a", "/b", "/x"])
+    state.createGroup(id: groupID, name: "Work", memberRepositoryIDs: ["/a", "/b"])
+    // Simulate a drag of "/x" between "/a" and "/b".
+    let ordered: [Repository.ID] = ["/a", "/x", "/b"]
+    state.reorderSections(to: ordered)
+
+    state.reconcileGroupMembership(afterMoving: ["/x"], ordered: ordered)
+
+    #expect(state.groupID(of: "/x") == groupID)
+  }
+
+  @Test func reconcileMembershipKeepsMemberMovedToRunEdge() {
+    var state = makeStateWithSections(["/a", "/b", "/c", "/x"])
+    state.createGroup(id: groupID, name: "Work", memberRepositoryIDs: ["/a", "/b", "/c"])
+    // "/a" dragged to the end of its own run: still adjacent to "/c".
+    let ordered: [Repository.ID] = ["/b", "/c", "/a", "/x"]
+    state.reorderSections(to: ordered)
+
+    state.reconcileGroupMembership(afterMoving: ["/a"], ordered: ordered)
+
+    #expect(state.groupID(of: "/a") == groupID)
+  }
+
+  @Test func reconcileMembershipRemovesMemberDraggedAway() {
+    var state = makeStateWithSections(["/a", "/b", "/x", "/y"])
+    state.createGroup(id: groupID, name: "Work", memberRepositoryIDs: ["/a", "/b"])
+    // "/a" dragged below two ungrouped repos.
+    let ordered: [Repository.ID] = ["/b", "/x", "/y", "/a"]
+    state.reorderSections(to: ordered)
+
+    state.reconcileGroupMembership(afterMoving: ["/a"], ordered: ordered)
+
+    #expect(state.groupID(of: "/a") == nil)
+    #expect(state.memberRepositoryIDs(of: groupID) == ["/b"])
+  }
+
+  @Test func reconcileMembershipDeletesGroupEmptiedByDrag() {
+    var state = makeStateWithSections(["/a", "/x"])
+    state.createGroup(id: groupID, name: "Work", memberRepositoryIDs: ["/a"])
+    let ordered: [Repository.ID] = ["/x", "/a"]
+    state.reorderSections(to: ordered)
+
+    state.reconcileGroupMembership(afterMoving: ["/a"], ordered: ordered)
+
+    #expect(state.groupID(of: "/a") == nil)
+    #expect(state.groups[groupID] == nil)
+  }
+
+  @Test func reconcileMembershipDropAtGroupBoundaryStaysTopLevel() {
+    var state = makeStateWithSections(["/a", "/b", "/x"])
+    state.createGroup(id: groupID, name: "Work", memberRepositoryIDs: ["/a", "/b"])
+    // "/x" dropped just before the group's first member: boundary, not inside.
+    let ordered: [Repository.ID] = ["/x", "/a", "/b"]
+    state.reorderSections(to: ordered)
+
+    state.reconcileGroupMembership(afterMoving: ["/x"], ordered: ordered)
+
+    #expect(state.groupID(of: "/x") == nil)
+  }
+
+  @Test func groupsRoundTripThroughCodable() throws {
+    var state = makeStateWithSections(["/a", "/b"])
+    state.createGroup(id: groupID, name: "Work", memberRepositoryIDs: ["/a"])
+    state.setGroupCollapsed(id: groupID, collapsed: true)
+
+    let data = try JSONEncoder().encode(state)
+    let decoded = try JSONDecoder().decode(SidebarState.self, from: data)
+
+    #expect(decoded.groups[groupID]?.name == "Work")
+    #expect(decoded.groups[groupID]?.collapsed == true)
+    #expect(decoded.groupID(of: "/a") == groupID)
+    #expect(decoded.groupID(of: "/b") == nil)
+  }
+
+  @Test func decodingLegacySidebarWithoutGroupsYieldsEmptyGroups() throws {
+    // `OrderedDictionary` encodes as a flat key/value array, matching what a
+    // pre-groups build actually wrote to `sidebar.json`.
+    let legacy = """
+      {"schemaVersion": 1, "sections": ["/a", {"collapsed": false, "buckets": []}]}
+      """
+    let decoded = try JSONDecoder().decode(SidebarState.self, from: Data(legacy.utf8))
+
+    #expect(decoded.groups.isEmpty)
+    #expect(decoded.sections["/a"] != nil)
+  }
+
+  @Test func malformedGroupsPayloadDropsGroupingNotSidebar() throws {
+    let malformed = """
+      {"schemaVersion": 1, "sections": ["/a", {"collapsed": false, "buckets": []}], "groups": 42}
+      """
+    let decoded = try JSONDecoder().decode(SidebarState.self, from: Data(malformed.utf8))
+
+    #expect(decoded.groups.isEmpty)
+    #expect(decoded.sections["/a"] != nil)
+  }
 }

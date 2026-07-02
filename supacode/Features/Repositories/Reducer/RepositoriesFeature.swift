@@ -184,6 +184,7 @@ struct RepositoriesFeature {
     @Presents var repositoryCustomization: RepositoryCustomizationFeature.State?
     @Presents var worktreeCustomization: WorktreeCustomizationFeature.State?
     @Presents var renameBranchPrompt: RenameBranchFeature.State?
+    @Presents var sidebarGroupNamePrompt: SidebarGroupNameFeature.State?
     @Presents var remoteConnectionForm: RemoteConnectionFormFeature.State?
     @Presents var cloneRepositoryForm: CloneRepositoryFormFeature.State?
     @Presents var alert: AlertState<Alert>?
@@ -377,6 +378,19 @@ struct RepositoriesFeature {
     case repositoriesMoved(IndexSet, Int)
     case pinnedWorktreesMoved(repositoryID: Repository.ID, IndexSet, Int)
     case unpinnedWorktreesMoved(repositoryID: Repository.ID, IndexSet, Int)
+    /// Present the "New Group…" name sheet, seeding the group with these repos.
+    case sidebarGroupCreateRequested(memberRepositoryIDs: [Repository.ID])
+    /// Present the "Rename Group…" name sheet for an existing group.
+    case sidebarGroupRenameRequested(SidebarGroupID)
+    case sidebarGroupNamePrompt(PresentationAction<SidebarGroupNameFeature.Action>)
+    case sidebarGroupSetCollapsed(SidebarGroupID, isCollapsed: Bool)
+    /// Move a repository into a group (`nil` = back to top level).
+    case sidebarGroupAssignRepository(Repository.ID, groupID: SidebarGroupID?)
+    /// Delete a group, returning its members to the top level in place.
+    case sidebarGroupDissolved(SidebarGroupID)
+    /// Whole-group drag: move every member section to `destination` in the
+    /// `orderedRepositoryIDs()` index space, preserving membership.
+    case sidebarGroupMoved(SidebarGroupID, destination: Int)
     case deleteWorktreeFailed(String, worktreeID: Worktree.ID)
     case requestDeleteRepository(Repository.ID)
     case requestRemoveFailedRepository(Repository.ID)
@@ -1296,21 +1310,14 @@ struct RepositoriesFeature {
         guard !offsets.isEmpty, ordered.indices.contains(offsets.min() ?? 0),
           destination <= ordered.count
         else { return .none }
+        let movedIDs = Set(offsets.compactMap { ordered.indices.contains($0) ? ordered[$0] : nil })
         ordered.move(fromOffsets: offsets, toOffset: destination)
         withAnimation(.snappy(duration: 0.2)) {
           state.$sidebar.withLock { sidebar in
-            var reordered: OrderedDictionary<Repository.ID, SidebarState.Section> = [:]
-            for id in ordered {
-              reordered[id] = sidebar.sections[id] ?? .init()
-            }
-            // Sections for repos still loading / not yet seen are
-            // reliably absent from `ordered`; append them in their
-            // original relative order so a live-row reorder doesn't
-            // silently reshuffle curation on them.
-            for (id, section) in sidebar.sections where reordered[id] == nil {
-              reordered[id] = section
-            }
-            sidebar.sections = reordered
+            sidebar.reorderSections(to: ordered)
+            // A dragged repo joins the group it was dropped strictly inside
+            // of, and leaves its group when dragged away from the run.
+            sidebar.reconcileGroupMembership(afterMoving: movedIDs, ordered: ordered)
           }
         }
         return .none
@@ -3820,6 +3827,13 @@ struct RepositoriesFeature {
         // under the type-checker's complexity limit.
         return .none
 
+      case .sidebarGroupCreateRequested, .sidebarGroupRenameRequested, .sidebarGroupNamePrompt,
+        .sidebarGroupSetCollapsed, .sidebarGroupAssignRepository, .sidebarGroupDissolved,
+        .sidebarGroupMoved:
+        // Real handling lives in `sidebarGroupsReducer` (combined below) to keep `body`
+        // under the type-checker's complexity limit.
+        return .none
+
       case .refreshGithubIntegrationAvailability, .githubIntegrationAvailabilityUpdated,
         .repositoryPullRequestRefreshCompleted, .worktreeBranchNameLoaded, .worktreeLineChangesLoaded,
         .repositoryPullRequestsLoaded, .pullRequestAction, .setGithubIntegrationEnabled, .setMergedWorktreeAction,
@@ -3975,6 +3989,12 @@ struct RepositoriesFeature {
     .ifLet(\.$renameBranchPrompt, action: \.renameBranchPrompt) {
       RenameBranchFeature()
     }
+    // Chained `ifLet` so the name sheet's child reducer runs before the
+    // groups reducer handles its `.delegate` / `.dismiss` and nils the state.
+    Self.sidebarGroupsReducer
+      .ifLet(\.$sidebarGroupNamePrompt, action: \.sidebarGroupNamePrompt) {
+        SidebarGroupNameFeature()
+      }
     Self.worktreeCustomizationReducer
       .ifLet(\.$worktreeCustomization, action: \.worktreeCustomization) {
         WorktreeCustomizationFeature()

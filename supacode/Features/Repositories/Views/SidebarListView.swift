@@ -132,6 +132,20 @@ struct SidebarListView: View {
     guard !repoIDs.isEmpty else { return }
     let sourceFlat = offsets.sorted()
     let sectionsCount = structure.sections.count
+
+    // A group-header drag moves the whole group as one unit; the reducer
+    // resolves the member offsets itself so membership survives the move.
+    if let first = sourceFlat.first, first < sectionsCount,
+      case .repoGroupHeader(let groupID, _, _, _, _) = structure.sections[first]
+    {
+      guard sourceFlat.count == 1 else { return }
+      let repoDestination = repoDestinationIndex(
+        forFlat: destination, structure: structure, repoIDs: repoIDs
+      )
+      store.send(.sidebarGroupMoved(groupID, destination: repoDestination))
+      return
+    }
+
     // Map flat section indices to repo indices via SectionID matching. Skip
     // any flat offset that doesn't correspond to a reorderable repo section.
     var repoOffsets = IndexSet()
@@ -144,28 +158,44 @@ struct SidebarListView: View {
         if let repoIndex = repoIDs.firstIndex(of: repositoryID) {
           repoOffsets.insert(repoIndex)
         }
-      case .highlight, .placeholder:
+      case .highlight, .placeholder, .repoGroupHeader:
         continue
       }
     }
     guard !repoOffsets.isEmpty else { return }
-    let clampedDestination = min(max(destination, 0), sectionsCount)
-    let repoDestination: Int
-    if clampedDestination >= sectionsCount {
-      repoDestination = repoIDs.count
-    } else {
-      let section = structure.sections[clampedDestination]
-      switch section {
-      case .repository(let repositoryID, _),
-        .folder(let repositoryID, _),
-        .failedRepository(let repositoryID, _, _, _, _):
-        repoDestination = repoIDs.firstIndex(of: repositoryID) ?? repoIDs.count
-      case .highlight, .placeholder:
-        // Dropping above the highlight prefix collapses to "before the first repo".
-        repoDestination = 0
-      }
-    }
+    let repoDestination = repoDestinationIndex(
+      forFlat: destination, structure: structure, repoIDs: repoIDs
+    )
     store.send(.repositoriesMoved(repoOffsets, repoDestination))
+  }
+
+  /// Translate a flat `.onMove` destination into the
+  /// `reorderableRepositoryIDs` index space the reducer moves in.
+  private func repoDestinationIndex(
+    forFlat destination: Int,
+    structure: SidebarStructure,
+    repoIDs: [Repository.ID]
+  ) -> Int {
+    let sectionsCount = structure.sections.count
+    let clampedDestination = min(max(destination, 0), sectionsCount)
+    guard clampedDestination < sectionsCount else { return repoIDs.count }
+    switch structure.sections[clampedDestination] {
+    case .repository(let repositoryID, _),
+      .folder(let repositoryID, _),
+      .failedRepository(let repositoryID, _, _, _, _):
+      return repoIDs.firstIndex(of: repositoryID) ?? repoIDs.count
+    case .repoGroupHeader(_, _, _, let memberRepositoryIDs, _):
+      // Dropping onto a group header lands before the group's first member.
+      if let firstMember = memberRepositoryIDs.first,
+        let repoIndex = repoIDs.firstIndex(of: firstMember)
+      {
+        return repoIndex
+      }
+      return repoIDs.count
+    case .highlight, .placeholder:
+      // Dropping above the highlight prefix collapses to "before the first repo".
+      return 0
+    }
   }
 
   @MainActor
@@ -212,6 +242,14 @@ private struct SidebarSectionDispatcher: View {
         shortcutHintByID: shortcutHintByID
       )
       .moveDisabled(true)
+    case .repoGroupHeader(let groupID, let name, let isCollapsed, _, let leafRowIDs):
+      SidebarRepoGroupHeaderRow(
+        groupID: groupID,
+        name: name,
+        isCollapsed: isCollapsed,
+        leafRowIDs: leafRowIDs,
+        store: store
+      )
     case .failedRepository(let repositoryID, let rootURL, let customTitle, let color, let isRemote):
       SidebarFailedRepositorySection(
         repositoryID: repositoryID,
@@ -394,6 +432,8 @@ private struct SidebarSectionActionsView: View {
         }
         .help("Repository Settings")
       }
+      Divider()
+      SidebarMoveToGroupMenu(repositoryID: repositoryID, store: store)
       Divider()
       Button(
         isRemote ? "Remove Remote Repository…" : "Remove Repository…",

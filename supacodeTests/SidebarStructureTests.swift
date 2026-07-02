@@ -1026,4 +1026,108 @@ struct SidebarStructureTests {
     // Hoisted d stays last; a moves to just before c.
     #expect(reordered == ["b", "a", "c", "d"])
   }
+
+  // MARK: - Repository groups.
+
+  private func makeRepository(root: String, name: String) -> Repository {
+    let repoRoot = URL(fileURLWithPath: root)
+    return Repository(
+      id: RepositoryID(repoRoot.path(percentEncoded: false)),
+      rootURL: repoRoot,
+      name: name,
+      worktrees: IdentifiedArray(uniqueElements: [makeMainWorktree(repoRoot: repoRoot)])
+    )
+  }
+
+  @Test func groupedReposRenderHeaderThenMembersContiguously() {
+    let repoA = makeRepository(root: "/tmp/repo-a", name: "a")
+    let repoB = makeRepository(root: "/tmp/repo-b", name: "b")
+    let repoC = makeRepository(root: "/tmp/repo-c", name: "c")
+    var state = makeState(repositories: [repoA, repoB, repoC])
+    let groupID = SidebarGroupID("group-1")
+    state.$sidebar.withLock { sidebar in
+      sidebar.createGroup(id: groupID, name: "Work", memberRepositoryIDs: [repoA.id, repoC.id])
+    }
+
+    let structure = state.computeSidebarStructure(groupPinned: false, groupActive: false)
+
+    #expect(
+      structure.sections.map(\.id) == [
+        .repoGroupHeader(groupID),
+        .repository(repoA.id),
+        .repository(repoC.id),
+        .repository(repoB.id),
+      ]
+    )
+    // The reorderable list mirrors `orderedRepositoryIDs()` (sections key
+    // order after the group pulled c up next to a).
+    #expect(structure.reorderableRepositoryIDs == [repoA.id, repoC.id, repoB.id])
+  }
+
+  @Test func collapsedGroupOmitsMemberSectionsAndHotkeysButCarriesLeafRowIDs() {
+    let repoA = makeRepository(root: "/tmp/repo-a", name: "a")
+    let repoB = makeRepository(root: "/tmp/repo-b", name: "b")
+    var state = makeState(repositories: [repoA, repoB])
+    let groupID = SidebarGroupID("group-1")
+    state.$sidebar.withLock { sidebar in
+      sidebar.createGroup(id: groupID, name: "Work", memberRepositoryIDs: [repoA.id])
+      sidebar.setGroupCollapsed(id: groupID, collapsed: true)
+    }
+    state.reconcileSidebarForTesting()
+
+    let structure = state.computeSidebarStructure(groupPinned: false, groupActive: false)
+
+    #expect(
+      structure.sections.map(\.id) == [
+        .repoGroupHeader(groupID),
+        .repository(repoB.id),
+      ]
+    )
+    guard
+      case .repoGroupHeader(_, let name, let isCollapsed, let members, let leafRowIDs) =
+        structure.sections.first
+    else {
+      Issue.record("expected a group header section")
+      return
+    }
+    #expect(name == "Work")
+    #expect(isCollapsed)
+    #expect(members == [repoA.id])
+    // The collapsed header aggregates over the member's rows.
+    let mainID = repoA.worktrees.first?.id
+    #expect(leafRowIDs == mainID.map { [$0] } ?? [])
+    // Hidden rows drop out of hotkey numbering; repoB's main takes slot 0.
+    let hotkeyIDs = structure.hotkeySlots.map(\.id)
+    #expect(!hotkeyIDs.contains(mainID ?? WorktreeID("")))
+    #expect(hotkeyIDs == repoB.worktrees.map(\.id))
+  }
+
+  @Test func nonContiguousPersistedMembersRenderTogetherAtFirstMemberPosition() {
+    let repoA = makeRepository(root: "/tmp/repo-a", name: "a")
+    let repoB = makeRepository(root: "/tmp/repo-b", name: "b")
+    let repoC = makeRepository(root: "/tmp/repo-c", name: "c")
+    var state = makeState(repositories: [repoA, repoB, repoC])
+    let groupID = SidebarGroupID("group-1")
+    // Simulate a corrupt pre-state: membership set by hand with the members
+    // split around a non-member in `sections` order.
+    state.$sidebar.withLock { sidebar in
+      sidebar.groups[groupID] = .init(name: "Work")
+      sidebar.sections[repoA.id] = .init(groupID: groupID)
+      sidebar.sections[repoB.id] = .init()
+      sidebar.sections[repoC.id] = .init(groupID: groupID)
+    }
+
+    let structure = state.computeSidebarStructure(groupPinned: false, groupActive: false)
+
+    #expect(
+      structure.sections.map(\.id) == [
+        .repoGroupHeader(groupID),
+        .repository(repoA.id),
+        .repository(repoC.id),
+        .repository(repoB.id),
+      ]
+    )
+    // The reorderable list still mirrors the persisted (non-contiguous) order.
+    #expect(structure.reorderableRepositoryIDs == [repoA.id, repoB.id, repoC.id])
+  }
 }

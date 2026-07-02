@@ -101,6 +101,14 @@ struct ContentView: View {
     ) { renameStore in
       RenameBranchView(store: renameStore)
     }
+    .sheet(
+      item: $repositoriesStore.scope(
+        state: \.sidebarGroupNamePrompt,
+        action: \.sidebarGroupNamePrompt
+      )
+    ) { groupNameStore in
+      SidebarGroupNameView(store: groupNameStore)
+    }
     .focusedSceneAction(\.toggleLeftSidebarAction, enabled: true) {
       withAnimation(.easeOut(duration: 0.2)) {
         leftSidebarVisibility = leftSidebarVisibility == .detailOnly ? .all : .detailOnly

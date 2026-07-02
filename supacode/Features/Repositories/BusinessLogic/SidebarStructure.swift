@@ -214,6 +214,19 @@ struct SidebarStructure: Equatable, Sendable {
 
   enum Section: Equatable, Sendable, Identifiable {
     case highlight(kind: HighlightKind, rowIDs: [Worktree.ID])
+    /// Header row for a user-defined repository group. When collapsed the
+    /// member repo sections are omitted from `sections` entirely (which also
+    /// removes their rows from hotkey numbering); `leafRowIDs` then carries
+    /// the members' visible row ids so the header can render aggregated
+    /// activity indicators. `memberRepositoryIDs` is always populated so the
+    /// view can translate a header drag into a whole-group move.
+    case repoGroupHeader(
+      groupID: SidebarGroupID,
+      name: String,
+      isCollapsed: Bool,
+      memberRepositoryIDs: [Repository.ID],
+      leafRowIDs: [Worktree.ID]
+    )
     case repository(repositoryID: Repository.ID, groups: [SidebarItemGroup])
     case folder(repositoryID: Repository.ID, rowID: Worktree.ID)
     case failedRepository(
@@ -228,6 +241,7 @@ struct SidebarStructure: Equatable, Sendable {
     var id: SectionID {
       switch self {
       case .highlight(let kind, _): .highlight(kind)
+      case .repoGroupHeader(let groupID, _, _, _, _): .repoGroupHeader(groupID)
       case .repository(let repositoryID, _): .repository(repositoryID)
       case .folder(let repositoryID, _): .folder(repositoryID)
       case .failedRepository(let repositoryID, _, _, _, _): .failedRepository(repositoryID)
@@ -237,6 +251,7 @@ struct SidebarStructure: Equatable, Sendable {
 
     enum SectionID: Hashable, Sendable {
       case highlight(HighlightKind)
+      case repoGroupHeader(SidebarGroupID)
       case repository(Repository.ID)
       case folder(Repository.ID)
       case failedRepository(Repository.ID)
@@ -379,6 +394,22 @@ extension RepositoriesFeature.Action {
       .worktreeNotificationReceived, .worktreeLineChangesLoaded,
       .consumeTerminalFocus:
       return .sidebarStructure
+
+    // Repo-group mutations reshape the section list (and thereby hotkeys).
+    case .sidebarGroupSetCollapsed, .sidebarGroupAssignRepository,
+      .sidebarGroupDissolved, .sidebarGroupMoved:
+      return .sidebarStructure
+
+    // Name-sheet submit creates or renames a group; the header title lives
+    // in the structure. Every other prompt action is presentation-only.
+    case .sidebarGroupNamePrompt(.presented(.delegate(.submitted))):
+      return .sidebarStructure
+    case .sidebarGroupNamePrompt:
+      return []
+
+    // Sheet presentation only; the structure changes on submit.
+    case .sidebarGroupCreateRequested, .sidebarGroupRenameRequested:
+      return []
 
     // Bulk repository / worktree set changes that touch all caches.
     case .repositoriesLoaded, .openRepositoriesFinished,
@@ -656,58 +687,132 @@ extension RepositoriesFeature.State {
     // `reorderableRepositoryIDs` mirrors `orderedRepositoryIDs()` 1:1 (even ids
     // with no rendered section, e.g. a still-loading root or a hoisted folder)
     // so the offset-based `.repositoriesMoved` move maps cleanly back.
-    for repositoryID in orderedRepositoryIDs() {
+    let ordered = orderedRepositoryIDs()
+
+    // Membership resolved once up front: a group renders at the position of
+    // its first member, pulling all members together even if a stray persisted
+    // order left them non-contiguous (the mutation API keeps them contiguous
+    // by construction; this walk is the render-side safety net).
+    var membersByGroup: [SidebarGroupID: [Repository.ID]] = [:]
+    for repositoryID in ordered {
+      if let groupID = sidebar.groupID(of: repositoryID) {
+        membersByGroup[groupID, default: []].append(repositoryID)
+      }
+    }
+
+    var emittedGroups: Set<SidebarGroupID> = []
+    for repositoryID in ordered {
       reorderableRepositoryIDs.append(repositoryID)
-      let repository = repositories[id: repositoryID]
-      let isRemote = repository?.host != nil
-
-      // A disconnected remote keeps a placeholder repository (so it isn't
-      // pruned) plus a load failure; render it like a missing local folder.
-      if loadFailuresByID[repositoryID] != nil {
-        guard let rootURL = localRootsByID[repositoryID] ?? repository?.rootURL else { continue }
-        let sectionEntry = sidebar.sections[repositoryID]
-        // A folder's custom name / color live on its synthetic folder-worktree
-        // item (the row is a worktree row), not the section, so fall back to it.
-        let folderItem = sectionEntry?.folderWorktreeItem(for: repositoryID)
-        sections.append(
-          .failedRepository(
-            repositoryID: repositoryID,
-            rootURL: rootURL,
-            customTitle: sectionEntry?.title ?? folderItem?.title,
-            color: sectionEntry?.color ?? folderItem?.color,
-            isRemote: isRemote
-          )
+      guard let groupID = sidebar.groupID(of: repositoryID) else {
+        if let section = repositorySection(
+          for: repositoryID,
+          hoisted: hoisted,
+          pendingIDsByRepo: pendingIDsByRepo,
+          localRootsByID: localRootsByID
+        ) {
+          sections.append(section)
+        }
+        continue
+      }
+      guard emittedGroups.insert(groupID).inserted else { continue }
+      let members = membersByGroup[groupID] ?? []
+      let group = sidebar.groups[groupID]
+      let isCollapsed = group?.collapsed ?? false
+      sections.append(
+        .repoGroupHeader(
+          groupID: groupID,
+          name: group?.name ?? "",
+          isCollapsed: isCollapsed,
+          memberRepositoryIDs: members,
+          leafRowIDs: isCollapsed ? groupLeafRowIDs(members: members, hoisted: hoisted) : []
         )
-        continue
-      }
-
-      guard let repository else { continue }
-
-      if !repository.isGitRepository {
-        // Local folder rows key off the path-derived synthetic id; a remote
-        // folder uses its synthetic worktree's own host-keyed id so it never
-        // collides with a local folder at the same path.
-        let folderRowID =
-          isRemote ? repository.worktrees.first?.id : Repository.folderWorktreeID(for: repository.rootURL)
-        guard let folderRowID, !hoisted.contains(folderRowID) else { continue }
-        sections.append(.folder(repositoryID: repositoryID, rowID: folderRowID))
-        continue
-      }
-
-      let groups = SidebarItemGroup.computeSlots(
-        in: self,
-        repositoryID: repositoryID,
-        pendingIDs: pendingIDsByRepo[repositoryID] ?? [],
-        hoistedRowIDs: hoisted,
-        nestWorktreesByBranch: sidebarNestWorktreesByBranch && repository.isGitRepository
       )
-      sections.append(.repository(repositoryID: repositoryID, groups: groups))
+      guard !isCollapsed else { continue }
+      for member in members {
+        if let section = repositorySection(
+          for: member,
+          hoisted: hoisted,
+          pendingIDsByRepo: pendingIDsByRepo,
+          localRootsByID: localRootsByID
+        ) {
+          sections.append(section)
+        }
+      }
     }
 
     return RepositorySectionsBuild(
       sections: sections,
       reorderableRepositoryIDs: reorderableRepositoryIDs
     )
+  }
+
+  /// Render section for a single repository id, or `nil` when nothing should
+  /// render (still-loading root, hoisted folder row). Extracted from the
+  /// `buildRepositorySections` walk so grouped and top-level repos share one
+  /// code path.
+  private func repositorySection(
+    for repositoryID: Repository.ID,
+    hoisted: Set<Worktree.ID>,
+    pendingIDsByRepo: [Repository.ID: Set<Worktree.ID>],
+    localRootsByID: [Repository.ID: URL]
+  ) -> SidebarStructure.Section? {
+    let repository = repositories[id: repositoryID]
+    let isRemote = repository?.host != nil
+
+    // A disconnected remote keeps a placeholder repository (so it isn't
+    // pruned) plus a load failure; render it like a missing local folder.
+    if loadFailuresByID[repositoryID] != nil {
+      guard let rootURL = localRootsByID[repositoryID] ?? repository?.rootURL else { return nil }
+      let sectionEntry = sidebar.sections[repositoryID]
+      // A folder's custom name / color live on its synthetic folder-worktree
+      // item (the row is a worktree row), not the section, so fall back to it.
+      let folderItem = sectionEntry?.folderWorktreeItem(for: repositoryID)
+      return .failedRepository(
+        repositoryID: repositoryID,
+        rootURL: rootURL,
+        customTitle: sectionEntry?.title ?? folderItem?.title,
+        color: sectionEntry?.color ?? folderItem?.color,
+        isRemote: isRemote
+      )
+    }
+
+    guard let repository else { return nil }
+
+    if !repository.isGitRepository {
+      // Local folder rows key off the path-derived synthetic id; a remote
+      // folder uses its synthetic worktree's own host-keyed id so it never
+      // collides with a local folder at the same path.
+      let folderRowID =
+        isRemote ? repository.worktrees.first?.id : Repository.folderWorktreeID(for: repository.rootURL)
+      guard let folderRowID, !hoisted.contains(folderRowID) else { return nil }
+      return .folder(repositoryID: repositoryID, rowID: folderRowID)
+    }
+
+    let groups = SidebarItemGroup.computeSlots(
+      in: self,
+      repositoryID: repositoryID,
+      pendingIDs: pendingIDsByRepo[repositoryID] ?? [],
+      hoistedRowIDs: hoisted,
+      nestWorktreesByBranch: sidebarNestWorktreesByBranch && repository.isGitRepository
+    )
+    return .repository(repositoryID: repositoryID, groups: groups)
+  }
+
+  /// Visible (non-archived, non-hoisted) row ids across a collapsed group's
+  /// members, feeding the header's aggregated activity indicators. Hoisted
+  /// rows are excluded because they stay visible in the highlight sections
+  /// even while the group is collapsed.
+  private func groupLeafRowIDs(
+    members: [Repository.ID],
+    hoisted: Set<Worktree.ID>
+  ) -> [Worktree.ID] {
+    var ids: [Worktree.ID] = []
+    for repositoryID in members {
+      guard let bucket = sidebarGrouping.bucketsByRepository[repositoryID] else { continue }
+      for id in bucket[.pinned] where !hoisted.contains(id) { ids.append(id) }
+      for id in bucket[.unpinned] where !hoisted.contains(id) { ids.append(id) }
+    }
+    return ids
   }
 
   /// Hotkey assignment output for a single structure pass.
@@ -810,7 +915,9 @@ extension RepositoriesFeature.State {
     var ids: [Worktree.ID] = []
     for section in sections {
       switch section {
-      case .highlight, .placeholder, .failedRepository:
+      // Collapsed groups already omit their member repo sections from
+      // `sections`, so their rows drop out of hotkey numbering here for free.
+      case .highlight, .placeholder, .failedRepository, .repoGroupHeader:
         continue
       case .folder(_, let rowID):
         ids.append(rowID)

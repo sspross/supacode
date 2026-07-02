@@ -424,7 +424,7 @@ struct SupacodeApp: App {
   }
 
   var body: some Scene {
-    Window("Supacode", id: WindowID.main) {
+    Window("Customcode", id: WindowID.main) {
       GhosttyColorSchemeSyncView(ghostty: ghostty) {
         ContentView(store: store, terminalManager: terminalManager)
           .environment(ghosttyShortcuts)
@@ -450,7 +450,7 @@ struct SupacodeApp: App {
       }
       UpdateCommands(store: store.scope(state: \.updates, action: \.updates))
       CommandGroup(replacing: .singleWindowList) {
-        Button("Supacode") {
+        Button("Customcode") {
           NSApplication.shared.surfaceMainWindow()
         }
         .appKeyboardShortcut(AppShortcuts.showMainWindow.effective(from: store.settings.shortcutOverrides))
@@ -469,11 +469,11 @@ struct SupacodeApp: App {
         .help("Submit GitHub Issue")
       }
       CommandGroup(replacing: .appTermination) {
-        Button("Quit Supacode") {
+        Button("Quit Customcode") {
           store.send(.requestQuit)
         }
         .keyboardShortcut("q")
-        .help("Quit Supacode (⌘Q)")
+        .help("Quit Customcode (⌘Q)")
       }
     }
     Window("Settings", id: WindowID.settings) {

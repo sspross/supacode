@@ -48,7 +48,7 @@ struct WindowTitleTests {
   @Test func computeReturnsAppNameWhenNoSelection() {
     let state = RepositoriesFeature.State()
     let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
-    #expect(WindowTitle.compute(repositories: state, terminalManager: manager) == "Supacode")
+    #expect(WindowTitle.compute(repositories: state, terminalManager: manager) == WindowTitle.appName)
   }
 
   @Test func computeReturnsArchiveLabelForArchivedSelection() {
@@ -62,7 +62,7 @@ struct WindowTitleTests {
     var state = RepositoriesFeature.State()
     state.selection = .worktree("does-not-exist")
     let manager = WorktreeTerminalManager(runtime: GhosttyRuntime())
-    #expect(WindowTitle.compute(repositories: state, terminalManager: manager) == "Supacode")
+    #expect(WindowTitle.compute(repositories: state, terminalManager: manager) == WindowTitle.appName)
   }
 
   @Test func computeUsesRepositoryNameWhenNoCustomTitle() {

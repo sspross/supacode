@@ -8,7 +8,7 @@ import OrderedCollections
 /// when nothing is selected. The hosting `Window` scene's title and
 /// the ⌘0 menu item stay `Supacode` regardless.
 enum WindowTitle {
-  static let appName = "Supacode"
+  static let appName = "Customcode"
   static let archivedLabel = "Archive"
 
   static func format(repo: String, tab: String?) -> String {

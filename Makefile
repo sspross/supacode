@@ -156,7 +156,7 @@ PERSONAL_NOTARY_PROFILE := supacode-notary
 dist-personal: $(TUIST_RELEASE_GENERATION_STAMP) # Build Release, Developer ID signed, for the personal Sparkle channel
 	$(SELECT_DEVELOPER_DIR); \
 	build_num="$$(git rev-list --count HEAD)"; export build_num; \
-	bash -o pipefail -c 'xcodebuild -workspace "$(PROJECT_WORKSPACE)" -scheme "$(APP_SCHEME)" -configuration Release build CURRENT_PROJECT_VERSION="$$build_num" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="$(PERSONAL_TEAM_ID)" CODE_SIGN_IDENTITY="$(PERSONAL_SIGN_IDENTITY)" OTHER_CODE_SIGN_FLAGS="--timestamp" -skipMacroValidation $(XCODEBUILD_FLAGS) 2>&1 | { mise exec -- xcbeautify --disable-logging || cat; }'; \
+	bash -o pipefail -c 'xcodebuild -workspace "$(PROJECT_WORKSPACE)" -scheme "$(APP_SCHEME)" -configuration Release build CURRENT_PROJECT_VERSION="$$build_num" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="$(PERSONAL_TEAM_ID)" CODE_SIGN_IDENTITY="$(PERSONAL_SIGN_IDENTITY)" OTHER_CODE_SIGN_FLAGS="--timestamp" CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO -skipMacroValidation $(XCODEBUILD_FLAGS) 2>&1 | { mise exec -- xcbeautify --disable-logging || cat; }'; \
 	settings="$$(xcodebuild -workspace "$(PROJECT_WORKSPACE)" -scheme "$(APP_SCHEME)" -configuration Release -showBuildSettings -json 2>/dev/null)"; \
 	build_dir="$$(echo "$$settings" | jq -r '.[0].buildSettings.BUILT_PRODUCTS_DIR')"; \
 	product="$$(echo "$$settings" | jq -r '.[0].buildSettings.FULL_PRODUCT_NAME')"; \
@@ -189,8 +189,15 @@ release-personal: dist-personal # Notarize, staple, and publish the personal bui
 		exit 1; \
 	fi
 	zip_path="$$(ls dist/supacode-personal-*.zip)"; \
-	xcrun notarytool submit "$$zip_path" --keychain-profile "$(PERSONAL_NOTARY_PROFILE)" --wait; \
-	xcrun stapler staple dist/supacode.app; \
+	submit_json="$$(xcrun notarytool submit "$$zip_path" --keychain-profile "$(PERSONAL_NOTARY_PROFILE)" --wait --output-format json)"; \
+	echo "$$submit_json"; \
+	submission_id="$$(echo "$$submit_json" | jq -r .id)"; \
+	if [ "$$(echo "$$submit_json" | jq -r .status)" != "Accepted" ]; then \
+		echo "notarization failed; log follows:"; \
+		xcrun notarytool log "$$submission_id" --keychain-profile "$(PERSONAL_NOTARY_PROFILE)"; \
+		exit 1; \
+	fi; \
+	xcrun stapler staple dist/supacode.app || exit 1; \
 	rm "$$zip_path"; \
 	ditto -c -k --keepParent dist/supacode.app "$$zip_path"
 	$(SPARKLE_BIN)/generate_appcast --ed-key-file "$(PERSONAL_SPARKLE_KEY)" --download-url-prefix "$(PERSONAL_DOWNLOAD_URL)" -o dist/appcast.xml dist

@@ -78,32 +78,11 @@ struct CustomCodePanelView: View {
   }
 }
 
-/// The show/hide toggle for the status panel; placed in the sidebar column's
-/// toolbar so it sits directly beside the system sidebar toggle.
-struct CustomCodePanelToggle: ToolbarContent {
-  let store: StoreOf<CustomCodeFeature>
-
-  var body: some ToolbarContent {
-    ToolbarItem(placement: .navigation) {
-      Button {
-        store.send(.setPanelShown(!store.isPanelShown))
-      } label: {
-        Label("Project Status", systemImage: "sidebar.trailing")
-      }
-      .help(
-        store.isPanelShown
-          ? "Hide the project status panel"
-          : "Show the project status panel rendered by customcode.py"
-      )
-    }
-  }
-}
-
 extension View {
   /// Attaches the customcode.py status panel as a trailing inspector. Lives in
   /// its own modifier so panel-state observation doesn't re-render the detail
-  /// view it wraps. The toggle button is `CustomCodePanelToggle`, placed in
-  /// the sidebar column's toolbar next to the system sidebar toggle.
+  /// view it wraps. Toggled from the View menu (`SidebarCommands`), which
+  /// writes `@Shared(.customCodePanelShown)` directly.
   func customCodeInspector(_ store: StoreOf<CustomCodeFeature>) -> some View {
     modifier(CustomCodeInspectorModifier(store: store))
   }
@@ -111,12 +90,18 @@ extension View {
 
 private struct CustomCodeInspectorModifier: ViewModifier {
   let store: StoreOf<CustomCodeFeature>
+  // Read through the shared key (not the store) so this view provably
+  // re-evaluates when the View-menu command flips the flag from outside the
+  // reducer; a value captured only inside the Binding getter would not
+  // register observation during body.
+  @Shared(.customCodePanelShown) private var isPanelShown: Bool
 
   func body(content: Content) -> some View {
     // Manual binding instead of `$store...sending` because `isPanelShown` is
     // `@Shared`-backed (no settable key path for `@Bindable` to project).
+    // Writes go through the reducer so close-affordances stay action-driven.
     let isPresented = Binding(
-      get: { store.isPanelShown },
+      get: { isPanelShown },
       set: { store.send(.setPanelShown($0)) }
     )
     return

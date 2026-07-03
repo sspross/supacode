@@ -6,7 +6,6 @@ import SwiftUI
 struct SidebarView: View {
   @Bindable var store: StoreOf<RepositoriesFeature>
   let terminalManager: WorktreeTerminalManager
-  let customCodeStore: StoreOf<CustomCodeFeature>
   @Shared(.settingsFile) private var settingsFile
 
   var body: some View {
@@ -38,9 +37,6 @@ struct SidebarView: View {
       terminalManager: terminalManager
     )
     .toolbar {
-      // Declared first so the panel toggle sits directly beside the system
-      // sidebar toggle at the leading edge of the sidebar section.
-      CustomCodePanelToggle(store: customCodeStore)
       ToolbarItem(placement: .primaryAction) {
         Menu {
           Button {

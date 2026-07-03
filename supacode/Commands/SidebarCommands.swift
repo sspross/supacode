@@ -12,6 +12,7 @@ struct SidebarCommands: Commands {
   private var nestedOnboardingDismissedAt: Date = .distantPast
   @Shared(.sidebarGroupPinnedRows) private var groupPinnedRows: Bool
   @Shared(.sidebarGroupActiveRows) private var groupActiveRows: Bool
+  @Shared(.customCodePanelShown) private var customCodePanelShown: Bool
   @Shared(.appStorage("highlightRelevantOnboardingDismissedAt"))
   private var highlightOnboardingDismissedAt: Date = .distantPast
 
@@ -77,6 +78,10 @@ struct SidebarCommands: Commands {
       .appKeyboardShortcut(toggleLeftSidebar)
       .help("Toggle Left Sidebar (\(toggleLeftSidebar?.display ?? "none"))")
       .disabled(toggleLeftSidebarAction?.isEnabled != true)
+      Button("Toggle Project Status Panel", systemImage: "sidebar.trailing") {
+        $customCodePanelShown.withLock { $0.toggle() }
+      }
+      .help("Toggle the project status panel rendered by customcode.py")
       Button("Reveal in Sidebar") {
         revealInSidebarAction?()
       }

@@ -33,15 +33,11 @@ struct ContentView: View {
       let _ = contentRenderLogger.info("ContentView.body re-rendered")
     #endif
     return NavigationSplitView(columnVisibility: $leftSidebarVisibility) {
-      SidebarView(
-        store: repositoriesStore,
-        terminalManager: terminalManager,
-        customCodeStore: store.scope(state: \.customCode, action: \.customCode)
-      )
-      .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
-      .safeAreaInset(edge: .bottom, spacing: 0) {
-        SidebarBottomCardView(store: store)
-      }
+      SidebarView(store: repositoriesStore, terminalManager: terminalManager)
+        .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+          SidebarBottomCardView(store: store)
+        }
     } detail: {
       WorktreeDetailView(store: store, terminalManager: terminalManager)
         .customCodeInspector(store.scope(state: \.customCode, action: \.customCode))

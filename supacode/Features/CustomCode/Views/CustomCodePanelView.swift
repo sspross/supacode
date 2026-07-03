@@ -22,7 +22,10 @@ struct CustomCodePanelView: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .overlay(alignment: .bottomTrailing) { refreshControl }
+    // The inspector reserves a toolbar-height strip at the top; the page
+    // should own the full column, edge to edge.
+    .ignoresSafeArea(edges: .top)
+    .overlay(alignment: .bottomLeading) { refreshControl }
     .onAppear { store.send(.panelAppeared) }
   }
 

@@ -41,8 +41,7 @@ struct AppFeatureDefaultEditorTests {
     }
     await store.receive(\.worktreeSettingsLoaded)
     await store.receive(\.customCode.selectionChanged) {
-      $0.customCode.worktreeID = worktree.id
-      $0.customCode.worktreeDirectory = worktree.localWorkingDirectory
+      $0.customCode.worktree = worktree
     }
     await store.receive(\.customCode.presenceResolved)
     #expect(store.state.openActionSelection == .finder)
@@ -112,8 +111,7 @@ struct AppFeatureDefaultEditorTests {
       $0.repoScripts = localRepositorySettings.scripts
     }
     await store.receive(\.customCode.selectionChanged) {
-      $0.customCode.worktreeID = worktree.id
-      $0.customCode.worktreeDirectory = worktree.localWorkingDirectory
+      $0.customCode.worktree = worktree
     }
     await store.receive(\.customCode.presenceResolved)
     await store.finish()
@@ -153,8 +151,7 @@ struct AppFeatureDefaultEditorTests {
       $0.openActionSelection = expectedOpenActionSelection
     }
     await store.receive(\.customCode.selectionChanged) {
-      $0.customCode.worktreeID = worktree.id
-      $0.customCode.worktreeDirectory = worktree.localWorkingDirectory
+      $0.customCode.worktree = worktree
     }
     await store.receive(\.customCode.presenceResolved)
     await store.finish()

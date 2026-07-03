@@ -10,14 +10,14 @@ nonisolated extension SharedReaderKey where Self == AppStorageKey<Bool>.Default 
 
 /// Drives the right-hand project-status inspector: tracks whether the selected
 /// worktree carries a `customcode.py` page script and renders its HTML through
-/// `CustomCodeClient` whenever the panel is visible.
+/// `CustomCodeClient` whenever the panel is visible. Local and remote (SSH)
+/// worktrees are both supported; the client owns the transport split.
 @Reducer
 struct CustomCodeFeature {
   @ObservableState
   struct State: Equatable {
     @Shared(.customCodePanelShown) var isPanelShown: Bool
-    var worktreeID: Worktree.ID?
-    var worktreeDirectory: URL?
+    var worktree: Worktree?
     var scriptPresent = false
     var isRendering = false
     var html: String?
@@ -30,7 +30,7 @@ struct CustomCodeFeature {
     case panelAppeared
     case refreshRequested
     case setPanelShown(Bool)
-    case presenceResolved(worktreeID: Worktree.ID, present: Bool)
+    case presenceResolved(worktreeID: Worktree.ID, result: Result<Bool, CustomCodeError>)
     case renderCompleted(worktreeID: Worktree.ID, result: Result<String, CustomCodeError>)
   }
 
@@ -42,50 +42,50 @@ struct CustomCodeFeature {
     Reduce { state, action in
       switch action {
       case .selectionChanged(let worktree):
-        // Remote worktrees have no local directory to run the script in.
-        guard let worktree, let directory = worktree.localWorkingDirectory else {
-          guard state.worktreeID != nil else { return .none }
+        guard let worktree else {
+          guard state.worktree != nil else { return .none }
           state.clearPage()
-          state.worktreeID = nil
-          state.worktreeDirectory = nil
+          state.worktree = nil
           return .cancel(id: CancelID.render)
         }
-        guard worktree.id != state.worktreeID || directory != state.worktreeDirectory else {
-          return .none
-        }
+        guard worktree != state.worktree else { return .none }
         state.clearPage()
-        state.worktreeID = worktree.id
-        state.worktreeDirectory = directory
+        state.worktree = worktree
         return .merge(
           .cancel(id: CancelID.render),
-          checkPresence(worktreeID: worktree.id, directory: directory)
+          checkPresence(worktree: worktree)
         )
 
       case .filesChanged(let worktreeID):
         // Re-check presence, not just re-render: a branch switch can add or
         // remove customcode.py itself.
-        guard worktreeID == state.worktreeID, let directory = state.worktreeDirectory else {
-          return .none
-        }
-        return checkPresence(worktreeID: worktreeID, directory: directory)
-
-      case .presenceResolved(let worktreeID, let present):
-        guard worktreeID == state.worktreeID, let directory = state.worktreeDirectory else {
-          return .none
-        }
-        state.scriptPresent = present
-        guard present else {
-          state.clearPage()
-          return .cancel(id: CancelID.render)
-        }
-        guard state.isPanelShown else { return .none }
-        return render(worktreeID: worktreeID, directory: directory, state: &state)
+        guard let worktree = state.worktree, worktree.id == worktreeID else { return .none }
+        return checkPresence(worktree: worktree)
 
       case .panelAppeared, .refreshRequested:
-        guard state.scriptPresent, let worktreeID = state.worktreeID,
-          let directory = state.worktreeDirectory
-        else { return .none }
-        return render(worktreeID: worktreeID, directory: directory, state: &state)
+        // Re-check presence, don't just re-render: the script may have been
+        // added since selection, and the HEAD-based watcher never fires for a
+        // plain file drop — this is the only discovery path in that case.
+        guard let worktree = state.worktree else { return .none }
+        return checkPresence(worktree: worktree)
+
+      case .presenceResolved(let worktreeID, let result):
+        guard let worktree = state.worktree, worktree.id == worktreeID else { return .none }
+        switch result {
+        case .success(true):
+          state.scriptPresent = true
+          state.errorMessage = nil
+          guard state.isPanelShown else { return .none }
+          return render(worktree: worktree, state: &state)
+        case .success(false):
+          state.clearPage()
+          return .cancel(id: CancelID.render)
+        case .failure(let error):
+          state.scriptPresent = false
+          state.isRendering = false
+          state.errorMessage = error.message
+          return .cancel(id: CancelID.render)
+        }
 
       case .setPanelShown(let shown):
         // Opening the panel mounts its view, whose `panelAppeared` triggers the
@@ -94,7 +94,7 @@ struct CustomCodeFeature {
         return .none
 
       case .renderCompleted(let worktreeID, let result):
-        guard worktreeID == state.worktreeID else { return .none }
+        guard state.worktree?.id == worktreeID else { return .none }
         state.isRendering = false
         switch result {
         case .success(let html):
@@ -108,26 +108,34 @@ struct CustomCodeFeature {
     }
   }
 
-  private func checkPresence(worktreeID: Worktree.ID, directory: URL) -> Effect<Action> {
+  private func checkPresence(worktree: Worktree) -> Effect<Action> {
     let pagePresent = customCodeClient.pagePresent
     return .run { send in
-      await send(.presenceResolved(worktreeID: worktreeID, present: pagePresent(directory)))
-    }
-  }
-
-  private func render(worktreeID: Worktree.ID, directory: URL, state: inout State) -> Effect<Action> {
-    state.isRendering = true
-    let renderPage = customCodeClient.renderPage
-    return .run { send in
-      let result: Result<String, CustomCodeError>
+      let result: Result<Bool, CustomCodeError>
       do {
-        result = .success(try await renderPage(directory))
+        result = .success(try await pagePresent(worktree))
       } catch let error as CustomCodeError {
         result = .failure(error)
       } catch {
         result = .failure(.scriptFailed(message: error.localizedDescription))
       }
-      await send(.renderCompleted(worktreeID: worktreeID, result: result))
+      await send(.presenceResolved(worktreeID: worktree.id, result: result))
+    }
+  }
+
+  private func render(worktree: Worktree, state: inout State) -> Effect<Action> {
+    state.isRendering = true
+    let renderPage = customCodeClient.renderPage
+    return .run { send in
+      let result: Result<String, CustomCodeError>
+      do {
+        result = .success(try await renderPage(worktree))
+      } catch let error as CustomCodeError {
+        result = .failure(error)
+      } catch {
+        result = .failure(.scriptFailed(message: error.localizedDescription))
+      }
+      await send(.renderCompleted(worktreeID: worktree.id, result: result))
     }
     .cancellable(id: CancelID.render, cancelInFlight: true)
   }

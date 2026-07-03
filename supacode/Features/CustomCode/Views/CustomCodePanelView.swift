@@ -33,7 +33,7 @@ struct CustomCodePanelView: View {
       }
       .buttonStyle(.borderless)
       .help("Re-run customcode.py and refresh the status page")
-      .disabled(!store.scriptPresent)
+      .disabled(store.worktree == nil)
     }
     .padding(.horizontal, 12)
     .padding(.vertical, 8)
@@ -63,6 +63,13 @@ struct CustomCodePanelView: View {
         Label("No Status Page", systemImage: "doc.text.magnifyingglass")
       } description: {
         Text("Add a customcode.py script to the worktree root to render a project status page here.")
+      } actions: {
+        if store.worktree != nil {
+          Button("Check Again") {
+            store.send(.refreshRequested)
+          }
+          .help("Re-check the worktree root for customcode.py")
+        }
       }
     }
   }

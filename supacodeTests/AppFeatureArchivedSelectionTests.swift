@@ -46,6 +46,7 @@ struct AppFeatureArchivedSelectionTests {
       $0.repositories.selection = .archivedWorktrees
     }
     await store.receive(\.repositories.delegate.selectedWorktreeChanged)
+    await store.receive(\.customCode.selectionChanged)
     await store.finish()
     // Selecting the archived list must NOT overwrite the last
     // focused live worktree — the sidebar focus should be

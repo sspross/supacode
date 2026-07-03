@@ -40,6 +40,11 @@ struct AppFeatureDefaultEditorTests {
       }
     }
     await store.receive(\.worktreeSettingsLoaded)
+    await store.receive(\.customCode.selectionChanged) {
+      $0.customCode.worktreeID = worktree.id
+      $0.customCode.worktreeDirectory = worktree.localWorkingDirectory
+    }
+    await store.receive(\.customCode.presenceResolved)
     #expect(store.state.openActionSelection == .finder)
     #expect(store.state.repoScripts.isEmpty)
     await store.finish()
@@ -106,6 +111,11 @@ struct AppFeatureDefaultEditorTests {
       $0.openActionSelection = .terminal
       $0.repoScripts = localRepositorySettings.scripts
     }
+    await store.receive(\.customCode.selectionChanged) {
+      $0.customCode.worktreeID = worktree.id
+      $0.customCode.worktreeDirectory = worktree.localWorkingDirectory
+    }
+    await store.receive(\.customCode.presenceResolved)
     await store.finish()
   }
 
@@ -142,6 +152,11 @@ struct AppFeatureDefaultEditorTests {
     await store.receive(\.worktreeSettingsLoaded) {
       $0.openActionSelection = expectedOpenActionSelection
     }
+    await store.receive(\.customCode.selectionChanged) {
+      $0.customCode.worktreeID = worktree.id
+      $0.customCode.worktreeDirectory = worktree.localWorkingDirectory
+    }
+    await store.receive(\.customCode.presenceResolved)
     await store.finish()
 
     #expect(watcherCommands.value == [.setSelectedWorktreeID(worktree.id)])

@@ -44,6 +44,7 @@ struct AppFeature {
     /// tab-bar views scope through `\.terminals` (narrow) instead of the full
     /// app store. Mirrors sidebar's `RepositoriesFeature` ownership pattern.
     var terminals = TerminalsFeature.State()
+    var customCode = CustomCodeFeature.State()
     var openActionSelection: OpenWorktreeAction = .finder
     var repoScripts: [ScriptDefinition] = []
     var globalScripts: [ScriptDefinition] = []
@@ -162,6 +163,7 @@ struct AppFeature {
     case settings(SettingsFeature.Action)
     case updates(UpdatesFeature.Action)
     case commandPalette(CommandPaletteFeature.Action)
+    case customCode(CustomCodeFeature.Action)
     case openActionSelectionChanged(OpenWorktreeAction)
     case worktreeSettingsLoaded(RepositorySettings, worktreeID: Worktree.ID)
     case openSelectedWorktree
@@ -329,7 +331,8 @@ struct AppFeature {
             },
             .run { _ in
               await worktreeInfoWatcher.send(.setSelectedWorktreeID(nil))
-            }
+            },
+            .send(.customCode(.selectionChanged(nil)))
           )
         }
         let rootURL = worktree.repositoryRootURL
@@ -346,8 +349,17 @@ struct AppFeature {
           .run { _ in
             await worktreeInfoWatcher.send(.setSelectedWorktreeID(worktree.id))
           },
-          .send(.worktreeSettingsLoaded(settings, worktreeID: worktreeID))
+          .send(.worktreeSettingsLoaded(settings, worktreeID: worktreeID)),
+          .send(.customCode(.selectionChanged(worktree)))
         )
+
+      case .repositories(.worktreeInfoEvent(.filesChanged(let worktreeID))):
+        // Fan the (already debounced) watcher tick into the status panel so an
+        // open customcode.py page tracks the worktree's on-disk state.
+        return .send(.customCode(.filesChanged(worktreeID)))
+
+      case .customCode:
+        return .none
 
       case .repositories(.delegate(.worktreeCreated(let worktree))):
         let shouldRunSetupScript =
@@ -1396,6 +1408,9 @@ struct AppFeature {
     }
     Scope(state: \.commandPalette, action: \.commandPalette) {
       CommandPaletteFeature()
+    }
+    Scope(state: \.customCode, action: \.customCode) {
+      CustomCodeFeature()
     }
     .ifLet(\.$deeplinkInputConfirmation, action: \.deeplinkInputConfirmation) {
       DeeplinkInputConfirmationFeature()

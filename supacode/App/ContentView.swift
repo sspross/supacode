@@ -40,6 +40,7 @@ struct ContentView: View {
         }
     } detail: {
       WorktreeDetailView(store: store, terminalManager: terminalManager)
+        .customCodeInspector(store.scope(state: \.customCode, action: \.customCode))
     }
     .navigationSplitViewStyle(.automatic)
     .disabled(!repositoriesStore.isInitialLoadComplete)

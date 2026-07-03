@@ -81,7 +81,7 @@ struct CustomCodeFeatureTests {
         result: .failure(.hostUnreachable(destination: "customcode-vm"))
       )
     ) {
-      $0.errorMessage = CustomCodeError.hostUnreachable(destination: "customcode-vm").message
+      $0.lastError = .hostUnreachable(destination: "customcode-vm")
     }
   }
 
@@ -244,7 +244,7 @@ struct CustomCodeFeatureTests {
       .renderCompleted(worktreeID: worktree.id, result: .failure(.uvMissing))
     ) {
       $0.isRendering = false
-      $0.errorMessage = CustomCodeError.uvMissing.message
+      $0.lastError = .uvMissing
     }
   }
 

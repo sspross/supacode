@@ -21,7 +21,7 @@ struct CustomCodeFeature {
     var scriptPresent = false
     var isRendering = false
     var html: String?
-    var errorMessage: String?
+    var lastError: CustomCodeError?
   }
 
   enum Action: Equatable {
@@ -74,7 +74,7 @@ struct CustomCodeFeature {
         switch result {
         case .success(true):
           state.scriptPresent = true
-          state.errorMessage = nil
+          state.lastError = nil
           guard state.isPanelShown else { return .none }
           return render(worktree: worktree, state: &state)
         case .success(false):
@@ -83,7 +83,7 @@ struct CustomCodeFeature {
         case .failure(let error):
           state.scriptPresent = false
           state.isRendering = false
-          state.errorMessage = error.message
+          state.lastError = error
           return .cancel(id: CancelID.render)
         }
 
@@ -99,9 +99,9 @@ struct CustomCodeFeature {
         switch result {
         case .success(let html):
           state.html = html
-          state.errorMessage = nil
+          state.lastError = nil
         case .failure(let error):
-          state.errorMessage = error.message
+          state.lastError = error
         }
         return .none
       }
@@ -146,6 +146,6 @@ extension CustomCodeFeature.State {
     scriptPresent = false
     isRendering = false
     html = nil
-    errorMessage = nil
+    lastError = nil
   }
 }

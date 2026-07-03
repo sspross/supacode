@@ -2,76 +2,76 @@ import ComposableArchitecture
 import SwiftUI
 
 /// The right-hand project-status inspector content: the rendered
-/// customcode.py page for the selected worktree, with loading / error /
-/// missing-script states.
+/// customcode.py page for the selected worktree, full-bleed, with a single
+/// short centered status line for the missing / error states and a
+/// refresh-or-spinner control floating bottom-trailing.
 struct CustomCodePanelView: View {
   let store: StoreOf<CustomCodeFeature>
 
   var body: some View {
-    VStack(spacing: 0) {
-      header
-      Divider()
-      content
+    ZStack {
+      if let html = store.html, store.lastError == nil {
+        HTMLPageView(html: html)
+      } else if let message = statusMessage {
+        Text(message)
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .multilineTextAlignment(.center)
+          .padding()
+          .help(statusDetail)
+      }
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .overlay(alignment: .bottomTrailing) { refreshControl }
     .onAppear { store.send(.panelAppeared) }
   }
 
-  private var header: some View {
-    HStack {
-      Text("Project Status")
-        .font(.subheadline.weight(.semibold))
-      Spacer()
-      if store.isRendering {
-        ProgressView()
-          .controlSize(.small)
+  /// One short line; the tooltip carries the full detail.
+  private var statusMessage: String? {
+    if let error = store.lastError {
+      switch error {
+      case .uvMissing:
+        return "uv not installed"
+      case .hostUnreachable(let destination):
+        return "can't reach \(destination)"
+      case .emptyOutput:
+        return "customcode.py printed nothing"
+      case .scriptFailed:
+        return "customcode.py failed"
       }
-      Button {
-        store.send(.refreshRequested)
-      } label: {
-        Label("Refresh", systemImage: "arrow.clockwise")
-          .labelStyle(.iconOnly)
-      }
-      .buttonStyle(.borderless)
-      .help("Re-run customcode.py and refresh the status page")
-      .disabled(store.worktree == nil)
     }
-    .padding(.horizontal, 12)
-    .padding(.vertical, 8)
+    if !store.scriptPresent {
+      return "./customcode.py not found"
+    }
+    return nil
+  }
+
+  private var statusDetail: String {
+    if let error = store.lastError {
+      return error.message
+    }
+    return "Add a customcode.py script to the worktree root to render a project status page here."
   }
 
   @ViewBuilder
-  private var content: some View {
-    if let errorMessage = store.errorMessage {
-      ContentUnavailableView {
-        Label("Script Failed", systemImage: "exclamationmark.triangle")
-      } description: {
-        Text(errorMessage)
-          .monospaced()
-      } actions: {
-        Button("Retry") {
+  private var refreshControl: some View {
+    Group {
+      if store.isRendering {
+        ProgressView()
+          .controlSize(.small)
+      } else {
+        Button {
           store.send(.refreshRequested)
+        } label: {
+          Label("Refresh", systemImage: "arrow.clockwise")
+            .labelStyle(.iconOnly)
         }
-        .help("Re-run customcode.py")
-      }
-    } else if let html = store.html {
-      HTMLPageView(html: html)
-    } else if store.scriptPresent {
-      ProgressView()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    } else {
-      ContentUnavailableView {
-        Label("No Status Page", systemImage: "doc.text.magnifyingglass")
-      } description: {
-        Text("Add a customcode.py script to the worktree root to render a project status page here.")
-      } actions: {
-        if store.worktree != nil {
-          Button("Check Again") {
-            store.send(.refreshRequested)
-          }
-          .help("Re-check the worktree root for customcode.py")
-        }
+        .buttonStyle(.borderless)
+        .help("Re-run customcode.py and refresh the status page")
+        .disabled(store.worktree == nil)
       }
     }
+    .padding(8)
   }
 }
 

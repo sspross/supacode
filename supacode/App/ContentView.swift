@@ -38,6 +38,9 @@ struct ContentView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
           SidebarBottomCardView(store: store)
         }
+        .toolbar {
+          CustomCodePanelToggle(store: store.scope(state: \.customCode, action: \.customCode))
+        }
     } detail: {
       WorktreeDetailView(store: store, terminalManager: terminalManager)
         .customCodeInspector(store.scope(state: \.customCode, action: \.customCode))

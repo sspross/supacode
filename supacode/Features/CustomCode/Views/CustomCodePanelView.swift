@@ -75,10 +75,32 @@ struct CustomCodePanelView: View {
   }
 }
 
+/// The show/hide toggle for the status panel; placed in the sidebar column's
+/// toolbar so it sits directly beside the system sidebar toggle.
+struct CustomCodePanelToggle: ToolbarContent {
+  let store: StoreOf<CustomCodeFeature>
+
+  var body: some ToolbarContent {
+    ToolbarItem(placement: .navigation) {
+      Button {
+        store.send(.setPanelShown(!store.isPanelShown))
+      } label: {
+        Label("Project Status", systemImage: "sidebar.trailing")
+      }
+      .help(
+        store.isPanelShown
+          ? "Hide the project status panel"
+          : "Show the project status panel rendered by customcode.py"
+      )
+    }
+  }
+}
+
 extension View {
-  /// Attaches the customcode.py status panel as a trailing inspector plus its
-  /// toolbar toggle. Lives in its own modifier so panel-state observation
-  /// doesn't re-render the detail view it wraps.
+  /// Attaches the customcode.py status panel as a trailing inspector. Lives in
+  /// its own modifier so panel-state observation doesn't re-render the detail
+  /// view it wraps. The toggle button is `CustomCodePanelToggle`, placed in
+  /// the sidebar column's toolbar next to the system sidebar toggle.
   func customCodeInspector(_ store: StoreOf<CustomCodeFeature>) -> some View {
     modifier(CustomCodeInspectorModifier(store: store))
   }
@@ -99,20 +121,6 @@ private struct CustomCodeInspectorModifier: ViewModifier {
       .inspector(isPresented: isPresented) {
         CustomCodePanelView(store: store)
           .inspectorColumnWidth(min: 220, ideal: 280, max: 400)
-      }
-      .toolbar {
-        ToolbarItem {
-          Button {
-            store.send(.setPanelShown(!store.isPanelShown))
-          } label: {
-            Label("Project Status", systemImage: "sidebar.trailing")
-          }
-          .help(
-            store.isPanelShown
-              ? "Hide the project status panel"
-              : "Show the project status panel rendered by customcode.py"
-          )
-        }
       }
   }
 }

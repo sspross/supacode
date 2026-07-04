@@ -22,6 +22,14 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- customcode.py serve mode: the sidebar webview loads cleartext
+		     http from loopback servers the page script runs. Local-only
+		     exception; remote ATS policy is untouched. -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>A program running within Supacode would like to use AppleScript.</string>
 	<key>NSAudioCaptureUsageDescription</key>

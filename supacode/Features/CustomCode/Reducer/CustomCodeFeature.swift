@@ -21,9 +21,13 @@ nonisolated extension SharedReaderKey where Self == FileStorageKey<Set<Repositor
 }
 
 /// Drives the right-hand project-status inspector: tracks whether the selected
-/// worktree carries a `customcode.py` page script and renders its HTML through
-/// `CustomCodeClient` whenever the panel is visible. Local and remote (SSH)
-/// worktrees are both supported; the client owns the transport split.
+/// worktree carries a `customcode.py` page script and renders its output
+/// through `CustomCodeClient` whenever the panel is visible. Snapshot pages
+/// re-render in place; serve-mode URLs reload only when the URL changes, the
+/// user explicitly refreshes, or the previous load failed — never on the
+/// periodic same-URL tick, so the web app's in-page state survives. Local and
+/// remote (SSH) worktrees are both supported; the client owns the transport
+/// split.
 @Reducer
 struct CustomCodeFeature {
   @ObservableState
@@ -33,12 +37,23 @@ struct CustomCodeFeature {
     var scriptPresent = false
     var isCheckingPresence = false
     var isRendering = false
-    var html: String?
+    var content: CustomCodeContent?
     var lastError: CustomCodeError?
-    /// Session cache of the last rendered page per worktree. Served
-    /// immediately on re-selection so switching worktrees shows the previous
-    /// page instead of flashing the empty state while the fresh render runs.
-    var htmlByWorktreeID: [WorktreeID: String] = [:]
+    /// Session cache of the last rendered page per worktree (snapshot HTML or
+    /// serve URL). Served immediately on re-selection so switching worktrees
+    /// shows the previous page instead of flashing the empty state while the
+    /// fresh render runs.
+    var contentByWorktreeID: [WorktreeID: CustomCodeContent] = [:]
+    /// Bumped whenever the webview should (re)issue a load of the current
+    /// serve URL. The view loads iff (url, loadRequestID) differs from what
+    /// its coordinator last loaded — never on mere SwiftUI updates.
+    var loadRequestID = 0
+    /// The webview reported that loading the current serve URL failed
+    /// (server down). Cleared only by a confirmed successful load.
+    var serveLoadFailed = false
+    /// Set by refreshRequested so the next render reloads even when the
+    /// serve URL is unchanged.
+    var forceReloadOnNextRender = false
 
     var repositoryID: RepositoryID? { worktree?.location.repositoryLocation.id }
 
@@ -56,7 +71,8 @@ struct CustomCodeFeature {
     case setPanelShown(Bool)
     case panelToggled
     case presenceResolved(worktreeID: Worktree.ID, result: Result<Bool, CustomCodeError>)
-    case renderCompleted(worktreeID: Worktree.ID, result: Result<String, CustomCodeError>)
+    case renderCompleted(worktreeID: Worktree.ID, result: Result<CustomCodeContent, CustomCodeError>)
+    case serveLoadResult(url: URL, success: Bool)
   }
 
   @Dependency(CustomCodeClient.self) private var customCodeClient
@@ -79,8 +95,8 @@ struct CustomCodeFeature {
         // Serve the cached page immediately so the switch doesn't flash the
         // missing-script state; the presence check below re-renders (or
         // clears) it in the background.
-        if let cached = state.htmlByWorktreeID[worktree.id] {
-          state.html = cached
+        if let cached = state.contentByWorktreeID[worktree.id] {
+          state.content = cached
           state.scriptPresent = true
         }
         return .merge(
@@ -108,6 +124,7 @@ struct CustomCodeFeature {
         // added since selection, and the HEAD-based watcher never fires for a
         // plain file drop — this is the only discovery path in that case.
         guard let worktree = state.worktree else { return .none }
+        state.forceReloadOnNextRender = true
         return checkPresence(worktree: worktree, state: &state)
 
       case .presenceResolved(let worktreeID, let result):
@@ -121,7 +138,7 @@ struct CustomCodeFeature {
           return render(worktree: worktree, state: &state)
         case .success(false):
           state.clearPage()
-          state.htmlByWorktreeID[worktreeID] = nil
+          state.contentByWorktreeID[worktreeID] = nil
           return .cancel(id: CancelID.render)
         case .failure(let error):
           state.scriptPresent = false
@@ -140,13 +157,33 @@ struct CustomCodeFeature {
         guard state.worktree?.id == worktreeID else { return .none }
         state.isRendering = false
         switch result {
-        case .success(let html):
-          state.html = html
-          state.htmlByWorktreeID[worktreeID] = html
+        case .success(let content):
+          let previous = state.content
+          state.content = content
+          state.contentByWorktreeID[worktreeID] = content
           state.lastError = nil
+          if case .url(let url) = content {
+            // Reload policy: load when the URL changed; retry once per tick
+            // after a reported failure (the script restarts the server, so
+            // recovery lands within ~30s without hammering); reload on
+            // explicit refresh; never on a same-URL periodic tick, which
+            // would reset the web app's state.
+            let sameURL = previous == .url(url)
+            if !sameURL || state.serveLoadFailed || state.forceReloadOnNextRender {
+              state.loadRequestID &+= 1
+            }
+          }
+          state.forceReloadOnNextRender = false
         case .failure(let error):
           state.lastError = error
+          state.forceReloadOnNextRender = false
         }
+        return .none
+
+      case .serveLoadResult(let url, let success):
+        // Stale reports (a load that raced a content change) don't count.
+        guard state.content == .url(url) else { return .none }
+        state.serveLoadFailed = !success
         return .none
       }
     }
@@ -187,7 +224,7 @@ struct CustomCodeFeature {
     state.isRendering = true
     let renderPage = customCodeClient.renderPage
     return .run { send in
-      let result: Result<String, CustomCodeError>
+      let result: Result<CustomCodeContent, CustomCodeError>
       do {
         result = .success(try await renderPage(worktree))
       } catch let error as CustomCodeError {
@@ -206,7 +243,11 @@ extension CustomCodeFeature.State {
     scriptPresent = false
     isCheckingPresence = false
     isRendering = false
-    html = nil
+    content = nil
     lastError = nil
+    serveLoadFailed = false
+    forceReloadOnNextRender = false
+    // loadRequestID stays monotonic: a freshly mounted coordinator always
+    // loads because it has no last-loaded URL yet.
   }
 }

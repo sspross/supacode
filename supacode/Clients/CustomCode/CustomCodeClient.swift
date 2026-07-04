@@ -2,14 +2,20 @@ import ComposableArchitecture
 import Foundation
 import SupacodeSettingsShared
 
-/// Runs a repository's `customcode.py` status-page script (snapshot-mode
-/// contract: the script prints a self-contained HTML document to stdout).
+/// Runs a repository's `customcode.py` page script. Two stdout contracts:
+/// snapshot mode (v0) prints a self-contained HTML document; serve mode (v1)
+/// prints a first line `supacode-serve: http://127.0.0.1:<port>/` (loopback
+/// http only; later lines reserved) and exits, leaving a detached server it
+/// owns — spawning, health-checking, restarting, idle shutdown — running at
+/// that URL across our ~30s re-runs. Serve mode is local-only in v1: a
+/// remote worktree's loopback URL is unreachable here (no SSH port
+/// forwarding yet), so the sentinel from a remote host is a script error.
 /// Local worktrees run through a login shell; remote worktrees run over the
 /// multiplexed SSH transport, whose remote login shell resolves `uv` on the
 /// host the same way.
 nonisolated struct CustomCodeClient: Sendable {
   var pagePresent: @Sendable (Worktree) async throws -> Bool
-  var renderPage: @Sendable (Worktree) async throws -> String
+  var renderPage: @Sendable (Worktree) async throws -> CustomCodeContent
 
   static let scriptFileName = "customcode.py"
 }
@@ -19,6 +25,8 @@ nonisolated enum CustomCodeError: Error, Equatable {
   case emptyOutput
   case hostUnreachable(destination: String)
   case scriptFailed(message: String)
+  case serveURLInvalid(line: String)
+  case serveUnsupportedForRemote(destination: String)
 
   var message: String {
     switch self {
@@ -30,6 +38,12 @@ nonisolated enum CustomCodeError: Error, Equatable {
       return "Can't reach \(destination) over SSH."
     case .scriptFailed(let message):
       return message
+    case .serveURLInvalid(let line):
+      return "customcode.py announced a serve URL that isn't a loopback http URL"
+        + " (allowed hosts: 127.0.0.1, localhost, ::1): \(line)"
+    case .serveUnsupportedForRemote(let destination):
+      return "customcode.py on \(destination) requested serve mode, which only works"
+        + " for local worktrees. Print a snapshot HTML page instead."
     }
   }
 }
@@ -85,7 +99,11 @@ extension CustomCodeClient {
           throw Self.scriptFailure(error)
         }
         guard !output.stdout.isEmpty else { throw CustomCodeError.emptyOutput }
-        return output.stdout
+        let content = try CustomCodeContent.parse(stdout: output.stdout)
+        if case .url = content, let host = worktree.host {
+          throw CustomCodeError.serveUnsupportedForRemote(destination: host.sshDestination)
+        }
+        return content
       }
     )
   }
@@ -116,6 +134,6 @@ extension CustomCodeClient: DependencyKey {
   static let liveValue = make(shell: .live)
   static let testValue = Self(
     pagePresent: { _ in false },
-    renderPage: { _ in "" }
+    renderPage: { _ in .html("") }
   )
 }

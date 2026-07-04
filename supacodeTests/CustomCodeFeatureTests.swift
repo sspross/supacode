@@ -15,7 +15,7 @@ struct CustomCodeFeatureTests {
       CustomCodeFeature()
     } withDependencies: {
       $0[CustomCodeClient.self].pagePresent = { _ in true }
-      $0[CustomCodeClient.self].renderPage = { _ in "<html>ok</html>" }
+      $0[CustomCodeClient.self].renderPage = { _ in .html("<html>ok</html>") }
     }
 
     await store.send(.selectionChanged(worktree)) {
@@ -28,11 +28,11 @@ struct CustomCodeFeatureTests {
       $0.isRendering = true
     }
     await store.receive(
-      .renderCompleted(worktreeID: worktree.id, result: .success("<html>ok</html>"))
+      .renderCompleted(worktreeID: worktree.id, result: .success(.html("<html>ok</html>")))
     ) {
       $0.isRendering = false
-      $0.html = "<html>ok</html>"
-      $0.htmlByWorktreeID[worktree.id] = "<html>ok</html>"
+      $0.content = .html("<html>ok</html>")
+      $0.contentByWorktreeID[worktree.id] = .html("<html>ok</html>")
     }
   }
 
@@ -43,7 +43,7 @@ struct CustomCodeFeatureTests {
       CustomCodeFeature()
     } withDependencies: {
       $0[CustomCodeClient.self].pagePresent = { _ in true }
-      $0[CustomCodeClient.self].renderPage = { _ in "<html>remote</html>" }
+      $0[CustomCodeClient.self].renderPage = { _ in .html("<html>remote</html>") }
     }
 
     await store.send(.selectionChanged(worktree)) {
@@ -56,11 +56,11 @@ struct CustomCodeFeatureTests {
       $0.isRendering = true
     }
     await store.receive(
-      .renderCompleted(worktreeID: worktree.id, result: .success("<html>remote</html>"))
+      .renderCompleted(worktreeID: worktree.id, result: .success(.html("<html>remote</html>")))
     ) {
       $0.isRendering = false
-      $0.html = "<html>remote</html>"
-      $0.htmlByWorktreeID[worktree.id] = "<html>remote</html>"
+      $0.content = .html("<html>remote</html>")
+      $0.contentByWorktreeID[worktree.id] = .html("<html>remote</html>")
     }
   }
 
@@ -94,7 +94,7 @@ struct CustomCodeFeatureTests {
     var initialState = CustomCodeFeature.State()
     initialState.worktree = makeWorktree(path: "/tmp/other/wt")
     initialState.scriptPresent = true
-    initialState.html = "<html>stale</html>"
+    initialState.content = .html("<html>stale</html>")
     let store = TestStore(initialState: initialState) {
       CustomCodeFeature()
     } withDependencies: {
@@ -104,7 +104,7 @@ struct CustomCodeFeatureTests {
     await store.send(.selectionChanged(worktree)) {
       $0.worktree = worktree
       $0.scriptPresent = false
-      $0.html = nil
+      $0.content = nil
       $0.isCheckingPresence = true
     }
     await store.receive(.presenceResolved(worktreeID: worktree.id, result: .success(false))) {
@@ -117,8 +117,8 @@ struct CustomCodeFeatureTests {
     var initialState = makeState(panelOpenFor: worktree)
     initialState.worktree = worktree
     initialState.scriptPresent = true
-    initialState.html = "<html>old</html>"
-    initialState.htmlByWorktreeID[worktree.id] = "<html>old</html>"
+    initialState.content = .html("<html>old</html>")
+    initialState.contentByWorktreeID[worktree.id] = .html("<html>old</html>")
     let store = TestStore(initialState: initialState) {
       CustomCodeFeature()
     } withDependencies: {
@@ -127,12 +127,14 @@ struct CustomCodeFeatureTests {
 
     await store.send(.refreshRequested) {
       $0.isCheckingPresence = true
+      $0.forceReloadOnNextRender = true
     }
     await store.receive(.presenceResolved(worktreeID: worktree.id, result: .success(false))) {
       $0.isCheckingPresence = false
       $0.scriptPresent = false
-      $0.html = nil
-      $0.htmlByWorktreeID[worktree.id] = nil
+      $0.content = nil
+      $0.contentByWorktreeID[worktree.id] = nil
+      $0.forceReloadOnNextRender = false
     }
   }
 
@@ -144,7 +146,7 @@ struct CustomCodeFeatureTests {
       $0[CustomCodeClient.self].pagePresent = { _ in true }
       $0[CustomCodeClient.self].renderPage = { _ in
         Issue.record("renderPage should not run while the panel is hidden")
-        return ""
+        return .html("")
       }
     }
 
@@ -166,7 +168,7 @@ struct CustomCodeFeatureTests {
       CustomCodeFeature()
     } withDependencies: {
       $0[CustomCodeClient.self].pagePresent = { _ in true }
-      $0[CustomCodeClient.self].renderPage = { _ in "<html>fresh</html>" }
+      $0[CustomCodeClient.self].renderPage = { _ in .html("<html>fresh</html>") }
     }
 
     await store.send(.panelAppeared) {
@@ -178,11 +180,11 @@ struct CustomCodeFeatureTests {
       $0.isRendering = true
     }
     await store.receive(
-      .renderCompleted(worktreeID: worktree.id, result: .success("<html>fresh</html>"))
+      .renderCompleted(worktreeID: worktree.id, result: .success(.html("<html>fresh</html>")))
     ) {
       $0.isRendering = false
-      $0.html = "<html>fresh</html>"
-      $0.htmlByWorktreeID[worktree.id] = "<html>fresh</html>"
+      $0.content = .html("<html>fresh</html>")
+      $0.contentByWorktreeID[worktree.id] = .html("<html>fresh</html>")
     }
   }
 
@@ -209,12 +211,12 @@ struct CustomCodeFeatureTests {
     var initialState = makeState(panelOpenFor: worktree)
     initialState.worktree = worktree
     initialState.scriptPresent = true
-    initialState.html = "<html>old</html>"
+    initialState.content = .html("<html>old</html>")
     let store = TestStore(initialState: initialState) {
       CustomCodeFeature()
     } withDependencies: {
       $0[CustomCodeClient.self].pagePresent = { _ in true }
-      $0[CustomCodeClient.self].renderPage = { _ in "<html>new</html>" }
+      $0[CustomCodeClient.self].renderPage = { _ in .html("<html>new</html>") }
     }
 
     await store.send(.filesChanged(worktree.id)) {
@@ -225,11 +227,11 @@ struct CustomCodeFeatureTests {
       $0.isRendering = true
     }
     await store.receive(
-      .renderCompleted(worktreeID: worktree.id, result: .success("<html>new</html>"))
+      .renderCompleted(worktreeID: worktree.id, result: .success(.html("<html>new</html>")))
     ) {
       $0.isRendering = false
-      $0.html = "<html>new</html>"
-      $0.htmlByWorktreeID[worktree.id] = "<html>new</html>"
+      $0.content = .html("<html>new</html>")
+      $0.contentByWorktreeID[worktree.id] = .html("<html>new</html>")
     }
   }
 
@@ -255,11 +257,12 @@ struct CustomCodeFeatureTests {
       CustomCodeFeature()
     } withDependencies: {
       $0[CustomCodeClient.self].pagePresent = { _ in true }
-      $0[CustomCodeClient.self].renderPage = { _ in "<html>found</html>" }
+      $0[CustomCodeClient.self].renderPage = { _ in .html("<html>found</html>") }
     }
 
     await store.send(.refreshRequested) {
       $0.isCheckingPresence = true
+      $0.forceReloadOnNextRender = true
     }
     await store.receive(.presenceResolved(worktreeID: worktree.id, result: .success(true))) {
       $0.isCheckingPresence = false
@@ -267,11 +270,12 @@ struct CustomCodeFeatureTests {
       $0.isRendering = true
     }
     await store.receive(
-      .renderCompleted(worktreeID: worktree.id, result: .success("<html>found</html>"))
+      .renderCompleted(worktreeID: worktree.id, result: .success(.html("<html>found</html>")))
     ) {
       $0.isRendering = false
-      $0.html = "<html>found</html>"
-      $0.htmlByWorktreeID[worktree.id] = "<html>found</html>"
+      $0.content = .html("<html>found</html>")
+      $0.contentByWorktreeID[worktree.id] = .html("<html>found</html>")
+      $0.forceReloadOnNextRender = false
     }
   }
 
@@ -289,6 +293,7 @@ struct CustomCodeFeatureTests {
 
     await store.send(.refreshRequested) {
       $0.isCheckingPresence = true
+      $0.forceReloadOnNextRender = true
     }
     await store.receive(.presenceResolved(worktreeID: worktree.id, result: .success(true))) {
       $0.isCheckingPresence = false
@@ -299,6 +304,7 @@ struct CustomCodeFeatureTests {
     ) {
       $0.isRendering = false
       $0.lastError = .uvMissing
+      $0.forceReloadOnNextRender = false
     }
   }
 
@@ -307,8 +313,8 @@ struct CustomCodeFeatureTests {
     var initialState = CustomCodeFeature.State()
     initialState.worktree = worktree
     initialState.scriptPresent = true
-    initialState.html = "<html>old</html>"
-    initialState.htmlByWorktreeID[worktree.id] = "<html>old</html>"
+    initialState.content = .html("<html>old</html>")
+    initialState.contentByWorktreeID[worktree.id] = .html("<html>old</html>")
     let store = TestStore(initialState: initialState) {
       CustomCodeFeature()
     }
@@ -316,9 +322,9 @@ struct CustomCodeFeatureTests {
     await store.send(.selectionChanged(nil)) {
       $0.worktree = nil
       $0.scriptPresent = false
-      $0.html = nil
+      $0.content = nil
     }
-    #expect(store.state.htmlByWorktreeID[worktree.id] == "<html>old</html>")
+    #expect(store.state.contentByWorktreeID[worktree.id] == .html("<html>old</html>"))
   }
 
   @Test(.dependencies) func cachedPageIsServedImmediatelyOnReselection() async {
@@ -336,7 +342,7 @@ struct CustomCodeFeatureTests {
       $0[CustomCodeClient.self].renderPage = { _ in
         renderCount.withValue {
           $0 += 1
-          return "<html>\($0)</html>"
+          return .html("<html>\($0)</html>")
         }
       }
     }
@@ -351,17 +357,17 @@ struct CustomCodeFeatureTests {
       $0.isRendering = true
     }
     await store.receive(
-      .renderCompleted(worktreeID: worktreeA.id, result: .success("<html>1</html>"))
+      .renderCompleted(worktreeID: worktreeA.id, result: .success(.html("<html>1</html>")))
     ) {
       $0.isRendering = false
-      $0.html = "<html>1</html>"
-      $0.htmlByWorktreeID[worktreeA.id] = "<html>1</html>"
+      $0.content = .html("<html>1</html>")
+      $0.contentByWorktreeID[worktreeA.id] = .html("<html>1</html>")
     }
 
     await store.send(.selectionChanged(worktreeB)) {
       $0.worktree = worktreeB
       $0.scriptPresent = false
-      $0.html = nil
+      $0.content = nil
       $0.isCheckingPresence = true
     }
     await store.receive(.presenceResolved(worktreeID: worktreeB.id, result: .success(true))) {
@@ -370,11 +376,11 @@ struct CustomCodeFeatureTests {
       $0.isRendering = true
     }
     await store.receive(
-      .renderCompleted(worktreeID: worktreeB.id, result: .success("<html>2</html>"))
+      .renderCompleted(worktreeID: worktreeB.id, result: .success(.html("<html>2</html>")))
     ) {
       $0.isRendering = false
-      $0.html = "<html>2</html>"
-      $0.htmlByWorktreeID[worktreeB.id] = "<html>2</html>"
+      $0.content = .html("<html>2</html>")
+      $0.contentByWorktreeID[worktreeB.id] = .html("<html>2</html>")
     }
 
     // Switching back serves worktree A's cached page synchronously — no flash
@@ -382,7 +388,7 @@ struct CustomCodeFeatureTests {
     await store.send(.selectionChanged(worktreeA)) {
       $0.worktree = worktreeA
       $0.scriptPresent = true
-      $0.html = "<html>1</html>"
+      $0.content = .html("<html>1</html>")
       $0.isCheckingPresence = true
     }
     await store.receive(.presenceResolved(worktreeID: worktreeA.id, result: .success(true))) {
@@ -390,11 +396,11 @@ struct CustomCodeFeatureTests {
       $0.isRendering = true
     }
     await store.receive(
-      .renderCompleted(worktreeID: worktreeA.id, result: .success("<html>3</html>"))
+      .renderCompleted(worktreeID: worktreeA.id, result: .success(.html("<html>3</html>")))
     ) {
       $0.isRendering = false
-      $0.html = "<html>3</html>"
-      $0.htmlByWorktreeID[worktreeA.id] = "<html>3</html>"
+      $0.content = .html("<html>3</html>")
+      $0.contentByWorktreeID[worktreeA.id] = .html("<html>3</html>")
     }
   }
 
@@ -406,7 +412,7 @@ struct CustomCodeFeatureTests {
       CustomCodeFeature()
     } withDependencies: {
       $0[CustomCodeClient.self].pagePresent = { _ in true }
-      $0[CustomCodeClient.self].renderPage = { _ in "<html>a</html>" }
+      $0[CustomCodeClient.self].renderPage = { _ in .html("<html>a</html>") }
     }
 
     await store.send(.selectionChanged(worktreeA)) {
@@ -420,18 +426,18 @@ struct CustomCodeFeatureTests {
       $0.isRendering = true
     }
     await store.receive(
-      .renderCompleted(worktreeID: worktreeA.id, result: .success("<html>a</html>"))
+      .renderCompleted(worktreeID: worktreeA.id, result: .success(.html("<html>a</html>")))
     ) {
       $0.isRendering = false
-      $0.html = "<html>a</html>"
-      $0.htmlByWorktreeID[worktreeA.id] = "<html>a</html>"
+      $0.content = .html("<html>a</html>")
+      $0.contentByWorktreeID[worktreeA.id] = .html("<html>a</html>")
     }
 
     // Repo B was left closed: presence still resolves, but nothing renders.
     await store.send(.selectionChanged(worktreeB)) {
       $0.worktree = worktreeB
       $0.scriptPresent = false
-      $0.html = nil
+      $0.content = nil
       $0.isCheckingPresence = true
     }
     #expect(!store.state.isPanelShown)
@@ -480,6 +486,276 @@ struct CustomCodeFeatureTests {
     await store.send(.panelToggled)
     await store.send(.setPanelShown(true))
     #expect(store.state.openPanelRepositoryIDs.isEmpty)
+  }
+
+  // MARK: - Serve mode (v1)
+
+  private nonisolated static let serveURL = URL(string: "http://127.0.0.1:8123/")!
+
+  @Test(.dependencies) func serveRenderStoresURLAndRequestsLoad() async {
+    let worktree = makeWorktree()
+    let initialState = makeState(panelOpenFor: worktree)
+    let store = TestStore(initialState: initialState) {
+      CustomCodeFeature()
+    } withDependencies: {
+      $0[CustomCodeClient.self].pagePresent = { _ in true }
+      $0[CustomCodeClient.self].renderPage = { _ in .url(Self.serveURL) }
+    }
+
+    await store.send(.selectionChanged(worktree)) {
+      $0.worktree = worktree
+      $0.isCheckingPresence = true
+    }
+    await store.receive(.presenceResolved(worktreeID: worktree.id, result: .success(true))) {
+      $0.isCheckingPresence = false
+      $0.scriptPresent = true
+      $0.isRendering = true
+    }
+    await store.receive(
+      .renderCompleted(worktreeID: worktree.id, result: .success(.url(Self.serveURL)))
+    ) {
+      $0.isRendering = false
+      $0.content = .url(Self.serveURL)
+      $0.contentByWorktreeID[worktree.id] = .url(Self.serveURL)
+      $0.loadRequestID = 1
+    }
+  }
+
+  @Test(.dependencies) func unchangedServeURLTickDoesNotReload() async {
+    let worktree = makeWorktree()
+    var initialState = makeState(panelOpenFor: worktree)
+    initialState.worktree = worktree
+    initialState.scriptPresent = true
+    initialState.content = .url(Self.serveURL)
+    initialState.contentByWorktreeID[worktree.id] = .url(Self.serveURL)
+    initialState.loadRequestID = 1
+    let store = TestStore(initialState: initialState) {
+      CustomCodeFeature()
+    } withDependencies: {
+      $0[CustomCodeClient.self].pagePresent = { _ in true }
+      $0[CustomCodeClient.self].renderPage = { _ in .url(Self.serveURL) }
+    }
+
+    await store.send(.filesChanged(worktree.id)) {
+      $0.isCheckingPresence = true
+    }
+    await store.receive(.presenceResolved(worktreeID: worktree.id, result: .success(true))) {
+      $0.isCheckingPresence = false
+      $0.isRendering = true
+    }
+    // Same URL, no failure, no explicit refresh: loadRequestID must not move,
+    // or the periodic tick would wipe the web app's in-page state.
+    await store.receive(
+      .renderCompleted(worktreeID: worktree.id, result: .success(.url(Self.serveURL)))
+    ) {
+      $0.isRendering = false
+    }
+  }
+
+  @Test(.dependencies) func changedServeURLReloads() async {
+    let movedURL = URL(string: "http://127.0.0.1:9999/")!
+    let worktree = makeWorktree()
+    var initialState = makeState(panelOpenFor: worktree)
+    initialState.worktree = worktree
+    initialState.scriptPresent = true
+    initialState.content = .url(Self.serveURL)
+    initialState.contentByWorktreeID[worktree.id] = .url(Self.serveURL)
+    initialState.loadRequestID = 1
+    let store = TestStore(initialState: initialState) {
+      CustomCodeFeature()
+    } withDependencies: {
+      $0[CustomCodeClient.self].pagePresent = { _ in true }
+      $0[CustomCodeClient.self].renderPage = { _ in .url(movedURL) }
+    }
+
+    await store.send(.filesChanged(worktree.id)) {
+      $0.isCheckingPresence = true
+    }
+    await store.receive(.presenceResolved(worktreeID: worktree.id, result: .success(true))) {
+      $0.isCheckingPresence = false
+      $0.isRendering = true
+    }
+    await store.receive(
+      .renderCompleted(worktreeID: worktree.id, result: .success(.url(movedURL)))
+    ) {
+      $0.isRendering = false
+      $0.content = .url(movedURL)
+      $0.contentByWorktreeID[worktree.id] = .url(movedURL)
+      $0.loadRequestID = 2
+    }
+  }
+
+  @Test(.dependencies) func refreshRequestedForcesReloadOfSameURL() async {
+    let worktree = makeWorktree()
+    var initialState = makeState(panelOpenFor: worktree)
+    initialState.worktree = worktree
+    initialState.scriptPresent = true
+    initialState.content = .url(Self.serveURL)
+    initialState.contentByWorktreeID[worktree.id] = .url(Self.serveURL)
+    initialState.loadRequestID = 1
+    let store = TestStore(initialState: initialState) {
+      CustomCodeFeature()
+    } withDependencies: {
+      $0[CustomCodeClient.self].pagePresent = { _ in true }
+      $0[CustomCodeClient.self].renderPage = { _ in .url(Self.serveURL) }
+    }
+
+    await store.send(.refreshRequested) {
+      $0.isCheckingPresence = true
+      $0.forceReloadOnNextRender = true
+    }
+    await store.receive(.presenceResolved(worktreeID: worktree.id, result: .success(true))) {
+      $0.isCheckingPresence = false
+      $0.isRendering = true
+    }
+    await store.receive(
+      .renderCompleted(worktreeID: worktree.id, result: .success(.url(Self.serveURL)))
+    ) {
+      $0.isRendering = false
+      $0.loadRequestID = 2
+      $0.forceReloadOnNextRender = false
+    }
+  }
+
+  @Test(.dependencies) func failedServeLoadRecoversOnNextTick() async {
+    let worktree = makeWorktree()
+    var initialState = makeState(panelOpenFor: worktree)
+    initialState.worktree = worktree
+    initialState.scriptPresent = true
+    initialState.content = .url(Self.serveURL)
+    initialState.contentByWorktreeID[worktree.id] = .url(Self.serveURL)
+    initialState.loadRequestID = 1
+    let store = TestStore(initialState: initialState) {
+      CustomCodeFeature()
+    } withDependencies: {
+      $0[CustomCodeClient.self].pagePresent = { _ in true }
+      $0[CustomCodeClient.self].renderPage = { _ in .url(Self.serveURL) }
+    }
+
+    await store.send(.serveLoadResult(url: Self.serveURL, success: false)) {
+      $0.serveLoadFailed = true
+    }
+    // The next tick re-runs the script (which restarts the server) and must
+    // reload even though the URL is unchanged.
+    await store.send(.filesChanged(worktree.id)) {
+      $0.isCheckingPresence = true
+    }
+    await store.receive(.presenceResolved(worktreeID: worktree.id, result: .success(true))) {
+      $0.isCheckingPresence = false
+      $0.isRendering = true
+    }
+    await store.receive(
+      .renderCompleted(worktreeID: worktree.id, result: .success(.url(Self.serveURL)))
+    ) {
+      $0.isRendering = false
+      $0.loadRequestID = 2
+    }
+    // The failure flag clears only on a confirmed successful load.
+    await store.send(.serveLoadResult(url: Self.serveURL, success: true)) {
+      $0.serveLoadFailed = false
+    }
+  }
+
+  @Test(.dependencies) func staleServeLoadResultIsIgnored() async {
+    let worktree = makeWorktree()
+    var initialState = CustomCodeFeature.State()
+    initialState.worktree = worktree
+    initialState.scriptPresent = true
+    initialState.content = .url(Self.serveURL)
+    let store = TestStore(initialState: initialState) {
+      CustomCodeFeature()
+    }
+
+    await store.send(.serveLoadResult(url: URL(string: "http://127.0.0.1:1/")!, success: false))
+    await store.finish()
+  }
+
+  @Test(.dependencies) func snapshotToServeTransitionReloads() async {
+    let worktree = makeWorktree()
+    var initialState = makeState(panelOpenFor: worktree)
+    initialState.worktree = worktree
+    initialState.scriptPresent = true
+    initialState.content = .html("<html>old</html>")
+    initialState.contentByWorktreeID[worktree.id] = .html("<html>old</html>")
+    let outputs = LockIsolated<[CustomCodeContent]>([
+      .url(Self.serveURL),
+      .html("<html>back</html>"),
+    ])
+    let store = TestStore(initialState: initialState) {
+      CustomCodeFeature()
+    } withDependencies: {
+      $0[CustomCodeClient.self].pagePresent = { _ in true }
+      $0[CustomCodeClient.self].renderPage = { _ in
+        outputs.withValue { $0.removeFirst() }
+      }
+    }
+
+    await store.send(.filesChanged(worktree.id)) {
+      $0.isCheckingPresence = true
+    }
+    await store.receive(.presenceResolved(worktreeID: worktree.id, result: .success(true))) {
+      $0.isCheckingPresence = false
+      $0.isRendering = true
+    }
+    await store.receive(
+      .renderCompleted(worktreeID: worktree.id, result: .success(.url(Self.serveURL)))
+    ) {
+      $0.isRendering = false
+      $0.content = .url(Self.serveURL)
+      $0.contentByWorktreeID[worktree.id] = .url(Self.serveURL)
+      $0.loadRequestID = 1
+    }
+
+    // Back to snapshot mode: the html branch loads via string equality, no
+    // loadRequestID involvement.
+    await store.send(.filesChanged(worktree.id)) {
+      $0.isCheckingPresence = true
+    }
+    await store.receive(.presenceResolved(worktreeID: worktree.id, result: .success(true))) {
+      $0.isCheckingPresence = false
+      $0.isRendering = true
+    }
+    await store.receive(
+      .renderCompleted(worktreeID: worktree.id, result: .success(.html("<html>back</html>")))
+    ) {
+      $0.isRendering = false
+      $0.content = .html("<html>back</html>")
+      $0.contentByWorktreeID[worktree.id] = .html("<html>back</html>")
+    }
+  }
+
+  @Test(.dependencies) func invalidServeURLSurfacesAsError() async {
+    let worktree = makeWorktree()
+    var initialState = makeState(panelOpenFor: worktree)
+    initialState.worktree = worktree
+    initialState.scriptPresent = true
+    let store = TestStore(initialState: initialState) {
+      CustomCodeFeature()
+    } withDependencies: {
+      $0[CustomCodeClient.self].pagePresent = { _ in true }
+      $0[CustomCodeClient.self].renderPage = { _ in
+        throw CustomCodeError.serveURLInvalid(line: "supacode-serve: ftp://nope/")
+      }
+    }
+
+    await store.send(.refreshRequested) {
+      $0.isCheckingPresence = true
+      $0.forceReloadOnNextRender = true
+    }
+    await store.receive(.presenceResolved(worktreeID: worktree.id, result: .success(true))) {
+      $0.isCheckingPresence = false
+      $0.isRendering = true
+    }
+    await store.receive(
+      .renderCompleted(
+        worktreeID: worktree.id,
+        result: .failure(.serveURLInvalid(line: "supacode-serve: ftp://nope/"))
+      )
+    ) {
+      $0.isRendering = false
+      $0.lastError = .serveURLInvalid(line: "supacode-serve: ftp://nope/")
+      $0.forceReloadOnNextRender = false
+    }
   }
 
   /// State pre-seeded with the worktree's repository marked panel-open, so

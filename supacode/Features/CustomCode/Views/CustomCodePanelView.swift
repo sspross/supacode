@@ -10,8 +10,27 @@ struct CustomCodePanelView: View {
 
   var body: some View {
     ZStack {
-      if let html = store.html, store.lastError == nil {
-        HTMLPageView(html: html)
+      if let content = store.content, store.lastError == nil {
+        CustomCodePageView(
+          content: content,
+          loadRequestID: store.loadRequestID,
+          onServeLoadResult: { store.send(.serveLoadResult(url: $0, success: $1)) }
+        )
+        // Remount per worktree: two worktrees announcing the same port must
+        // not share scroll/DOM state, and a cached serve URL should issue a
+        // fresh load on reselection.
+        .id(store.worktree?.id)
+        .overlay {
+          if store.serveLoadFailed {
+            Text("page server not responding — retrying…")
+              .font(.callout)
+              .foregroundStyle(.secondary)
+              .multilineTextAlignment(.center)
+              .padding()
+              .frame(maxWidth: .infinity, maxHeight: .infinity)
+              .background(.thinMaterial)
+          }
+        }
       } else if let message = statusMessage {
         Text(message)
           .font(.callout)
@@ -41,6 +60,10 @@ struct CustomCodePanelView: View {
         return "customcode.py printed nothing"
       case .scriptFailed:
         return "customcode.py failed"
+      case .serveURLInvalid:
+        return "customcode.py printed a bad serve URL"
+      case .serveUnsupportedForRemote:
+        return "serve mode needs a local worktree"
       }
     }
     if !store.scriptPresent {

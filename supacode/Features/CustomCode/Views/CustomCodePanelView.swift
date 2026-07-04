@@ -62,8 +62,8 @@ struct CustomCodePanelView: View {
         return "customcode.py failed"
       case .serveURLInvalid:
         return "customcode.py printed a bad serve URL"
-      case .serveUnsupportedForRemote:
-        return "serve mode needs a local worktree"
+      case .serveForwardFailed:
+        return "couldn't tunnel to the page server"
       }
     }
     if !store.scriptPresent {

@@ -7,11 +7,14 @@ import SupacodeSettingsShared
 /// prints a first line `supacode-serve: http://127.0.0.1:<port>/` (loopback
 /// http only; later lines reserved) and exits, leaving a detached server it
 /// owns — spawning, health-checking, restarting, idle shutdown — running at
-/// that URL across our ~30s re-runs. Serve mode is local-only in v1: a
-/// remote worktree's loopback URL is unreachable here (no SSH port
-/// forwarding yet), so the sentinel from a remote host is a script error.
-/// Local worktrees run through a login shell; remote worktrees run over the
-/// multiplexed SSH transport, whose remote login shell resolves `uv` on the
+/// that URL across our ~30s re-runs. A remote worktree's loopback URL lives
+/// on the SSH host, so `RemoteServeForwarder` bridges it here with an
+/// `ssh -O forward -L` local forward and the webview loads the rewritten
+/// local URL. All panel SSH traffic (presence probe, render handshake,
+/// forward) rides the panel's own multiplexed master (`CustomCodeSSH`,
+/// `~/.ssh/customcode-%C`) rather than upstream's `supacode-%C`, keeping the
+/// fork's upstream-merge surface confined to this feature. Local worktrees
+/// run through a login shell; the remote login shell resolves `uv` on the
 /// host the same way.
 nonisolated struct CustomCodeClient: Sendable {
   var pagePresent: @Sendable (Worktree) async throws -> Bool
@@ -26,7 +29,7 @@ nonisolated enum CustomCodeError: Error, Equatable {
   case hostUnreachable(destination: String)
   case scriptFailed(message: String)
   case serveURLInvalid(line: String)
-  case serveUnsupportedForRemote(destination: String)
+  case serveForwardFailed(destination: String, detail: String)
 
   var message: String {
     switch self {
@@ -41,15 +44,14 @@ nonisolated enum CustomCodeError: Error, Equatable {
     case .serveURLInvalid(let line):
       return "customcode.py announced a serve URL that isn't a loopback http URL"
         + " (allowed hosts: 127.0.0.1, localhost, ::1): \(line)"
-    case .serveUnsupportedForRemote(let destination):
-      return "customcode.py on \(destination) requested serve mode, which only works"
-        + " for local worktrees. Print a snapshot HTML page instead."
+    case .serveForwardFailed(let destination, let detail):
+      return "Couldn't forward the remote page server on \(destination) to this Mac: \(detail)"
     }
   }
 }
 
 extension CustomCodeClient {
-  static func make(shell: ShellClient) -> Self {
+  static func make(shell: ShellClient, forwarder: RemoteServeForwarder) -> Self {
     Self(
       pagePresent: { worktree in
         switch worktree.location {
@@ -59,11 +61,13 @@ extension CustomCodeClient {
           )
         case .remote(let host, let workingDirectory, _):
           do {
-            _ = try await Self.sshShell(host: host, base: shell).run(
-              URL(fileURLWithPath: "/usr/bin/env"),
-              ["test", "-f", scriptFileName],
-              URL(fileURLWithPath: workingDirectory)
+            let (executableURL, arguments) = CustomCodeSSH.invocation(
+              host: host,
+              executable: "/usr/bin/env",
+              arguments: ["test", "-f", scriptFileName],
+              workingDirectory: URL(fileURLWithPath: workingDirectory)
             )
+            _ = try await shell.run(executableURL, arguments, nil)
             return true
           } catch let error as ShellClientError {
             // `test -f` exits 1 for a missing file; anything else is transport.
@@ -84,9 +88,13 @@ extension CustomCodeClient {
               URL(fileURLWithPath: "/usr/bin/env"), arguments, workingDirectory
             )
           case .remote(let host, let workingDirectory, _):
-            output = try await Self.sshShell(host: host, base: shell).run(
-              URL(fileURLWithPath: "/usr/bin/env"), arguments, URL(fileURLWithPath: workingDirectory)
+            let (executableURL, sshArguments) = CustomCodeSSH.invocation(
+              host: host,
+              executable: "/usr/bin/env",
+              arguments: arguments,
+              workingDirectory: URL(fileURLWithPath: workingDirectory)
             )
+            output = try await shell.run(executableURL, sshArguments, nil)
           }
         } catch let error as ShellClientError {
           // 127 is the shell's command-not-found exit for a missing `uv`.
@@ -100,18 +108,12 @@ extension CustomCodeClient {
         }
         guard !output.stdout.isEmpty else { throw CustomCodeError.emptyOutput }
         let content = try CustomCodeContent.parse(stdout: output.stdout)
-        if case .url = content, let host = worktree.host {
-          throw CustomCodeError.serveUnsupportedForRemote(destination: host.sshDestination)
+        if case .url(let url) = content, let host = worktree.host {
+          return .url(try await forwarder.localURL(worktreeID: worktree.id, host: host, remoteURL: url))
         }
         return content
       }
     )
-  }
-
-  /// Non-interactive SSH profile: shares the app's multiplexed connection and
-  /// fails fast (BatchMode, 10s connect timeout) instead of hanging on prompts.
-  private nonisolated static func sshShell(host: RemoteHost, base: ShellClient) -> ShellClient {
-    .ssh(host: host, base: base, extraOptions: SSHCommand.backgroundProbeOptions)
   }
 
   private nonisolated static func remoteFailure(host: RemoteHost, error: ShellClientError) -> CustomCodeError {
@@ -131,7 +133,7 @@ extension CustomCodeClient {
 }
 
 extension CustomCodeClient: DependencyKey {
-  static let liveValue = make(shell: .live)
+  static let liveValue = make(shell: .live, forwarder: RemoteServeForwarder())
   static let testValue = Self(
     pagePresent: { _ in false },
     renderPage: { _ in .html("") }

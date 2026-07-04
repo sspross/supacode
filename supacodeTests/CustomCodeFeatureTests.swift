@@ -521,6 +521,37 @@ struct CustomCodeFeatureTests {
     }
   }
 
+  @Test(.dependencies) func remoteServeRenderRequestsLoad() async {
+    // The client hands the reducer an already-bridged local URL for a remote
+    // worktree, so serve mode behaves exactly like local: store + load.
+    let worktree = makeRemoteWorktree()
+    let initialState = makeState(panelOpenFor: worktree)
+    let store = TestStore(initialState: initialState) {
+      CustomCodeFeature()
+    } withDependencies: {
+      $0[CustomCodeClient.self].pagePresent = { _ in true }
+      $0[CustomCodeClient.self].renderPage = { _ in .url(Self.serveURL) }
+    }
+
+    await store.send(.selectionChanged(worktree)) {
+      $0.worktree = worktree
+      $0.isCheckingPresence = true
+    }
+    await store.receive(.presenceResolved(worktreeID: worktree.id, result: .success(true))) {
+      $0.isCheckingPresence = false
+      $0.scriptPresent = true
+      $0.isRendering = true
+    }
+    await store.receive(
+      .renderCompleted(worktreeID: worktree.id, result: .success(.url(Self.serveURL)))
+    ) {
+      $0.isRendering = false
+      $0.content = .url(Self.serveURL)
+      $0.contentByWorktreeID[worktree.id] = .url(Self.serveURL)
+      $0.loadRequestID = 1
+    }
+  }
+
   @Test(.dependencies) func unchangedServeURLTickDoesNotReload() async {
     let worktree = makeWorktree()
     var initialState = makeState(panelOpenFor: worktree)

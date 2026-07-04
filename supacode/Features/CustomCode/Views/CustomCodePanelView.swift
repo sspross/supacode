@@ -44,7 +44,9 @@ struct CustomCodePanelView: View {
       }
     }
     if !store.scriptPresent {
-      return "./customcode.py not found"
+      // Stay blank while the presence check is in flight so a selection
+      // switch doesn't flash "not found" before the page comes up.
+      return store.isCheckingPresence ? nil : "./customcode.py not found"
     }
     return nil
   }
@@ -81,8 +83,9 @@ struct CustomCodePanelView: View {
 extension View {
   /// Attaches the customcode.py status panel as a trailing inspector. Lives in
   /// its own modifier so panel-state observation doesn't re-render the detail
-  /// view it wraps. Toggled from the View menu (`SidebarCommands`), which
-  /// writes `@Shared(.customCodePanelShown)` directly.
+  /// view it wraps. Visibility is per-repository: the View-menu toggle
+  /// (`SidebarCommands`) routes through `panelToggled`, and switching the
+  /// selection restores whatever state the repository was left in.
   func customCodeInspector(_ store: StoreOf<CustomCodeFeature>) -> some View {
     modifier(CustomCodeInspectorModifier(store: store))
   }
@@ -90,16 +93,17 @@ extension View {
 
 private struct CustomCodeInspectorModifier: ViewModifier {
   let store: StoreOf<CustomCodeFeature>
-  // Read through the shared key (not the store) so this view provably
-  // re-evaluates when the View-menu command flips the flag from outside the
-  // reducer; a value captured only inside the Binding getter would not
-  // register observation during body.
-  @Shared(.customCodePanelShown) private var isPanelShown: Bool
 
   func body(content: Content) -> some View {
-    // Manual binding instead of `$store...sending` because `isPanelShown` is
-    // `@Shared`-backed (no settable key path for `@Bindable` to project).
-    // Writes go through the reducer so close-affordances stay action-driven.
+    // Eager read during body so observation registers on both inputs of the
+    // per-repo lookup (selected worktree + shared open-repository set); a
+    // read confined to the Binding getter would not register during body,
+    // and the inspector would miss View-menu toggles and selection switches.
+    let isPanelShown = store.isPanelShown
+    // Manual binding instead of `$store...sending` because the flag is
+    // derived per-repository (no settable key path for `@Bindable` to
+    // project). Writes go through the reducer so close-affordances stay
+    // action-driven.
     let isPresented = Binding(
       get: { isPanelShown },
       set: { store.send(.setPanelShown($0)) }

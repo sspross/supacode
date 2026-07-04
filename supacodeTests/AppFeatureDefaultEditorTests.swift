@@ -42,8 +42,11 @@ struct AppFeatureDefaultEditorTests {
     await store.receive(\.worktreeSettingsLoaded)
     await store.receive(\.customCode.selectionChanged) {
       $0.customCode.worktree = worktree
+      $0.customCode.isCheckingPresence = true
     }
-    await store.receive(\.customCode.presenceResolved)
+    await store.receive(\.customCode.presenceResolved) {
+      $0.customCode.isCheckingPresence = false
+    }
     #expect(store.state.openActionSelection == .finder)
     #expect(store.state.repoScripts.isEmpty)
     await store.finish()
@@ -112,8 +115,11 @@ struct AppFeatureDefaultEditorTests {
     }
     await store.receive(\.customCode.selectionChanged) {
       $0.customCode.worktree = worktree
+      $0.customCode.isCheckingPresence = true
     }
-    await store.receive(\.customCode.presenceResolved)
+    await store.receive(\.customCode.presenceResolved) {
+      $0.customCode.isCheckingPresence = false
+    }
     await store.finish()
   }
 
@@ -152,8 +158,11 @@ struct AppFeatureDefaultEditorTests {
     }
     await store.receive(\.customCode.selectionChanged) {
       $0.customCode.worktree = worktree
+      $0.customCode.isCheckingPresence = true
     }
-    await store.receive(\.customCode.presenceResolved)
+    await store.receive(\.customCode.presenceResolved) {
+      $0.customCode.isCheckingPresence = false
+    }
     await store.finish()
 
     #expect(watcherCommands.value == [.setSelectedWorktreeID(worktree.id)])

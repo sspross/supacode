@@ -122,6 +122,12 @@ struct ContentView: View {
       store.send(.requestTerminateAllTerminalSessions)
     }
     .focusedSceneAction(
+      \.toggleCustomCodePanelAction,
+      enabled: store.customCode.worktree != nil
+    ) {
+      store.send(.customCode(.panelToggled))
+    }
+    .focusedSceneAction(
       \.revealInSidebarAction,
       enabled: repositoriesStore.selectedWorktreeID != nil
     ) {
